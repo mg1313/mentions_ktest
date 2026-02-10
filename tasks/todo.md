@@ -234,6 +234,9 @@
 - Added target config template: `configs/nba_link_scout.basketball_video.template.json`.
 - Added schedule URL support for literal `YYYYMMDD` token and updated NBA scoreboard mapping (`scoreboard.games`, nested team fields).
 - Switched basketball-video template to full-season NBA schedule endpoint and added auto-flatten for `leagueSchedule.gameDates[].games[]`.
+- Hardened basketball-video fetching against 403 scenarios: no retry on non-retryable HTTP errors, browser-like configurable headers, and fallback extractor execution even when primary fetch fails.
+- Added fallback adapter circuit-breaker to disable Selenium extractor after first fatal WebDriver-style failure, reducing repeated stacktraces across games.
+- Hardened `extract_video_url_selenium.py` with modern headless options and fail-open behavior (`[]` on WebDriverException) to avoid noisy hard failures.
 
 ## Review
 - What changed:
@@ -258,5 +261,7 @@
   - Dry-run now resolves NBA URL correctly to `todaysScoreboard_20260210.json`.
   - Re-ran after full-season endpoint update: `python -m pytest -q` -> 21 passed.
   - Dry-run now shows schedule request URL `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`.
+  - Re-ran after anti-403 hardening: `python -m pytest -q` -> 23 passed.
+  - Re-ran after Selenium circuit-breaker: `python -m pytest -q` -> 24 passed.
 - How to run:
   - `PYTHONPATH=src python -m mentions_sports_poller.nba_link_scout run --date 2026-02-10 --config configs/nba_link_scout.basketball_video.template.json --daily-video-output data/nba_okru_daily.json`

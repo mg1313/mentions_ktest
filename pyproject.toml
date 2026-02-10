@@ -9,6 +9,9 @@ description = "Kalshi Mentions Sports orderbook polling and VWAP pipeline"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27.0",
+  "requests>=2.31.0",
+  "beautifulsoup4>=4.12.0",
+  "selenium>=4.18.0",
 ]
 
 [project.optional-dependencies]

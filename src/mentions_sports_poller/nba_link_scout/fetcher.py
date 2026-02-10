@@ -24,6 +24,8 @@ class HttpFetcher:
         max_retries: int,
         backoff_base_seconds: float,
         user_agent: str,
+        request_headers: dict[str, str] | None = None,
+        follow_redirects: bool = True,
         logger: logging.Logger | None = None,
         session: Any | None = None,
         sleep_fn: Any | None = None,
@@ -32,8 +34,15 @@ class HttpFetcher:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.backoff_base_seconds = backoff_base_seconds
+        self.follow_redirects = follow_redirects
         self.logger = logger or logging.getLogger(__name__)
-        self._session = session or httpx.Client(headers={"User-Agent": user_agent})
+        default_headers = {"User-Agent": user_agent}
+        if request_headers:
+            default_headers.update(request_headers)
+        self._session = session or httpx.Client(
+            headers=default_headers,
+            follow_redirects=follow_redirects,
+        )
         self._owns_session = session is None
         self._sleep = sleep_fn or time.sleep
         self._random = random_fn or random.random
@@ -87,30 +96,28 @@ class HttpFetcher:
                     headers=headers,
                     timeout=self.timeout_seconds,
                 )
-                if response.status_code == 429 or response.status_code >= 500:
-                    if attempt >= self.max_retries:
-                        response.raise_for_status()
-                    raise httpx.HTTPStatusError(
-                        "retryable status",
-                        request=response.request,
-                        response=response,
-                    )
                 response.raise_for_status()
                 return response
-            except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError):
+            except httpx.HTTPStatusError as exc:
+                code = exc.response.status_code
+                retryable = code == 429 or code >= 500
+                if not retryable or attempt >= self.max_retries:
+                    raise
+            except (httpx.TimeoutException, httpx.TransportError):
                 if attempt >= self.max_retries:
                     raise
-                sleep_seconds = self._backoff_seconds(attempt)
-                self.logger.warning(
-                    "request failed, retrying",
-                    extra={
-                        "url": url,
-                        "attempt": attempt + 1,
-                        "sleep_seconds": sleep_seconds,
-                    },
-                )
-                self._sleep(sleep_seconds)
-                attempt += 1
+
+            sleep_seconds = self._backoff_seconds(attempt)
+            self.logger.warning(
+                "request failed, retrying",
+                extra={
+                    "url": url,
+                    "attempt": attempt + 1,
+                    "sleep_seconds": sleep_seconds,
+                },
+            )
+            self._sleep(sleep_seconds)
+            attempt += 1
 
     def _backoff_seconds(self, attempt: int) -> float:
         exp = self.backoff_base_seconds * (2**attempt)

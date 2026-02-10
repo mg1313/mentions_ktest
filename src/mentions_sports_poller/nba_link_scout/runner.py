@@ -38,12 +38,16 @@ def run_link_scout(
         FallbackExtractorAdapter(config=fallback_cfg, logger=log)
         for fallback_cfg in config.fallback_extractors
     ]
+    disabled_fallback_keys: set[str] = set()
+    fallback_failure_counts: dict[str, int] = {}
 
     with HttpFetcher(
         timeout_seconds=timeout,
         max_retries=retries,
         backoff_base_seconds=config.http.backoff_base_seconds,
         user_agent=config.http.user_agent,
+        request_headers=config.http.request_headers,
+        follow_redirects=config.http.follow_redirects,
         logger=log,
     ) as fetcher:
         schedule_provider = make_schedule_provider(
@@ -99,6 +103,8 @@ def run_link_scout(
                     fetcher=fetcher,
                     fallback_adapters=fallback_adapters,
                     video_link_rule=config.video_link_rule,
+                    disabled_fallback_keys=disabled_fallback_keys,
+                    fallback_failure_counts=fallback_failure_counts,
                     logger=log,
                 )
                 result_payload["results"].append(
@@ -120,14 +126,29 @@ def _process_candidate(
     fetcher: HttpFetcher,
     fallback_adapters: list[FallbackExtractorAdapter],
     video_link_rule: Any | None,
+    disabled_fallback_keys: set[str] | None = None,
+    fallback_failure_counts: dict[str, int] | None = None,
     logger: logging.Logger,
 ) -> ExtractionResult:
+    final_filter_rule = video_link_rule or candidate.link_search_rule
     try:
         response = fetcher.get_text(candidate.page_url)
     except Exception as exc:
         message = f"failed to fetch {candidate.page_url}: {exc}"
         logger.error(message)
-        return ExtractionResult(found_links=(), method_used="html", debug={"error": message})
+        if not fallback_adapters:
+            return ExtractionResult(found_links=(), method_used="html", debug={"error": message})
+        fallback_links, fallback_debug = _run_fallback_extractors(
+            extraction_targets=[candidate.page_url],
+            fallback_adapters=fallback_adapters,
+            final_filter_rule=final_filter_rule,
+            source_html_by_url={},
+            disabled_fallback_keys=disabled_fallback_keys,
+            fallback_failure_counts=fallback_failure_counts,
+            logger=logger,
+        )
+        debug = {"error": message, "fallback_attempts": fallback_debug}
+        return ExtractionResult(found_links=fallback_links, method_used="fallback", debug=debug)
 
     html_links = extract_links_from_html(
         response.text,
@@ -146,7 +167,6 @@ def _process_candidate(
             debug=debug,
         )
 
-    final_filter_rule = video_link_rule or candidate.link_search_rule
     if video_link_rule is not None:
         direct_video_links = apply_link_filters(
             html_links,
@@ -166,6 +186,34 @@ def _process_candidate(
 
     # Try extractors on the source page and on intermediary links found in the source HTML.
     extraction_targets = _unique_preserve_order([candidate.page_url, *html_links])
+    unique_filtered, fallback_attempts = _run_fallback_extractors(
+        extraction_targets=extraction_targets,
+        fallback_adapters=fallback_adapters,
+        final_filter_rule=final_filter_rule,
+        source_html_by_url={candidate.page_url: response.text},
+        disabled_fallback_keys=disabled_fallback_keys,
+        fallback_failure_counts=fallback_failure_counts,
+        logger=logger,
+    )
+    debug["fallback_attempts"] = fallback_attempts
+    debug["fallback_filtered_count"] = len(unique_filtered)
+    return ExtractionResult(
+        found_links=unique_filtered,
+        method_used="fallback",
+        debug=debug,
+    )
+
+
+def _run_fallback_extractors(
+    *,
+    extraction_targets: list[str],
+    fallback_adapters: list[FallbackExtractorAdapter],
+    final_filter_rule: Any,
+    source_html_by_url: dict[str, str],
+    disabled_fallback_keys: set[str] | None,
+    fallback_failure_counts: dict[str, int] | None,
+    logger: logging.Logger,
+) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
     collected: list[str] = []
     fallback_attempts: list[dict[str, Any]] = []
     for target_url in extraction_targets:
@@ -178,10 +226,15 @@ def _process_candidate(
                 "module_path": module_path,
                 "function_name": function_name,
             }
+            adapter_key = f"{module_path}:{function_name}"
+            if disabled_fallback_keys is not None and adapter_key in disabled_fallback_keys:
+                attempt_debug["skipped"] = "adapter_disabled"
+                fallback_attempts.append(attempt_debug)
+                continue
             try:
                 raw_fallback_links = adapter.extract(
                     page_url=target_url,
-                    html=response.text if target_url == candidate.page_url else "",
+                    html=source_html_by_url.get(target_url, ""),
                 )
                 normalized = normalize_urls(raw_fallback_links, base_url=target_url)
                 filtered = apply_link_filters(normalized, base_url=target_url, rule=final_filter_rule)
@@ -189,23 +242,60 @@ def _process_candidate(
                 attempt_debug["filtered_count"] = len(filtered)
                 collected.extend(filtered)
             except Exception as exc:
+                fail_count = 1
+                if fallback_failure_counts is not None:
+                    fail_count = fallback_failure_counts.get(adapter_key, 0) + 1
+                    fallback_failure_counts[adapter_key] = fail_count
                 message = (
                     "fallback extractor failed "
                     f"({module_path}:{function_name}) "
                     f"on {target_url}: {exc}"
                 )
                 attempt_debug["error"] = str(exc)
+                attempt_debug["failure_count"] = fail_count
+                if (
+                    disabled_fallback_keys is not None
+                    and _should_disable_fallback_adapter(
+                        module_path=module_path,
+                        error=exc,
+                        failure_count=fail_count,
+                    )
+                ):
+                    disabled_fallback_keys.add(adapter_key)
+                    attempt_debug["disabled_after_error"] = True
+                    logger.error(
+                        "disabled fallback extractor after repeated/fatal error",
+                        extra={
+                            "adapter_key": adapter_key,
+                            "failure_count": fail_count,
+                        },
+                    )
                 logger.error(message)
             fallback_attempts.append(attempt_debug)
-
     unique_filtered = tuple(_unique_preserve_order(collected))
-    debug["fallback_attempts"] = fallback_attempts
-    debug["fallback_filtered_count"] = len(unique_filtered)
-    return ExtractionResult(
-        found_links=unique_filtered,
-        method_used="fallback",
-        debug=debug,
+    return unique_filtered, fallback_attempts
+
+
+def _should_disable_fallback_adapter(
+    *,
+    module_path: str,
+    error: Exception,
+    failure_count: int,
+) -> bool:
+    if failure_count >= 3:
+        return True
+    msg = str(error).lower()
+    module_lower = module_path.lower()
+    webdriver_markers = (
+        "webdriver",
+        "session not created",
+        "chrome not reachable",
+        "cannot find chrome binary",
+        "stacktrace",
     )
+    if "selenium" in module_lower and any(marker in msg for marker in webdriver_markers):
+        return True
+    return False
 
 
 def _build_daily_video_rows(results: list[dict[str, Any]]) -> list[dict[str, str]]:

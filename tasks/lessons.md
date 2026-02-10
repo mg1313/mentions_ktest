@@ -69,3 +69,43 @@
   - Flatten known nested bucket shapes (`gameDates[].games[]`) in extraction helper when configured path lands on buckets.
 - How to detect earlier:
   - Add unit tests for both direct game lists and bucketed list sources.
+
+## 2026-02-10 - Retry policy must distinguish retryable vs non-retryable HTTP statuses
+- What happened:
+  - 403 responses were retried repeatedly, creating noise and wasted latency without improving success.
+- Root cause:
+  - HTTP status handling retried all `HTTPStatusError` exceptions instead of only 429/5xx.
+- Preventative rule:
+  - Retry only retryable statuses (429, 5xx) plus transport/timeouts; fail fast on 4xx like 403.
+- How to detect earlier:
+  - Add explicit unit tests for non-retryable status behavior (e.g., 403 single-attempt assertion).
+
+## 2026-02-10 - Fallback extraction should still run when primary page fetch fails
+- What happened:
+  - A blocked source page prevented all downstream extraction despite configured fallback extractors.
+- Root cause:
+  - Runner exited immediately on fetch exception before invoking fallback chain.
+- Preventative rule:
+  - If fallback extractors are configured, attempt them on the candidate URL even when HTML fetch fails.
+- How to detect earlier:
+  - Add a unit test with failing fetcher + successful fallback extractor and assert non-empty output.
+
+## 2026-02-10 - WebDriver failures should trip a circuit-breaker during batch runs
+- What happened:
+  - Selenium fallback raised repeated fatal stacktraces for many games, adding latency/noise with no chance of recovery.
+- Root cause:
+  - Per-game fallback retries kept invoking the same broken extractor state.
+- Preventative rule:
+  - Disable a fallback adapter for the remainder of the run after fatal WebDriver-style errors (or repeated failures).
+- How to detect earlier:
+  - Add a unit test covering two consecutive candidates where first fatal error disables the adapter before second candidate.
+
+## 2026-02-10 - Selenium helper should fail open instead of propagating browser init/runtime crashes
+- What happened:
+  - Raw Selenium exceptions leaked large stacktraces and overshadowed primary extraction flow.
+- Root cause:
+  - Helper raised WebDriver exceptions directly without graceful fallback behavior.
+- Preventative rule:
+  - In optional extractors, catch WebDriver-level exceptions and return empty results so orchestrator can continue with other paths.
+- How to detect earlier:
+  - Add integration smoke run with intentionally broken WebDriver and assert run completes with logged warnings, not hard errors.

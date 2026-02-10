@@ -196,6 +196,8 @@ def _parse_http(raw: Any) -> HttpSettings:
         raise ConfigError("http must be an object")
     return HttpSettings(
         user_agent=_optional_str(raw.get("user_agent")) or "nba-link-scout/0.1",
+        request_headers=_to_str_dict(raw.get("request_headers", {}), "http.request_headers"),
+        follow_redirects=bool(raw.get("follow_redirects", True)),
         timeout_seconds=_to_float(raw.get("timeout_seconds", 15.0), "http.timeout_seconds"),
         max_retries=_to_int(raw.get("max_retries", 3), "http.max_retries"),
         backoff_base_seconds=_to_float(

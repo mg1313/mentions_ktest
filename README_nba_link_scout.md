@@ -65,6 +65,8 @@ Key fields:
   - extractors are tried on source pages and intermediary matched links (for example `guidedesgemmes.com`)
 - `daily_video_output_path` (optional)
   - JSON file that is upserted each run with `date`, `home`, `away`, `video_url`
+- `http`
+  - `user_agent`, `request_headers`, and `follow_redirects` can be set for stricter sites
 
 ## Output
 
@@ -84,3 +86,4 @@ For the basketball-video -> guidedesgemmes -> ok.ru workflow, see:
 
 - `configs/nba_link_scout.basketball_video.template.json`
   - Uses NBA full-season schedule endpoint (`scheduleLeagueV2.json`) and auto-flattens `leagueSchedule.gameDates[].games[]`.
+  - Includes browser-like HTTP headers to reduce 403 blocks.

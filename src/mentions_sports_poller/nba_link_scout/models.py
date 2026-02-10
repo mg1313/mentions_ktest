@@ -93,6 +93,8 @@ class FallbackExtractorConfig:
 @dataclass(frozen=True)
 class HttpSettings:
     user_agent: str = "nba-link-scout/0.1"
+    request_headers: dict[str, str] = field(default_factory=dict)
+    follow_redirects: bool = True
     timeout_seconds: float = 15.0
     max_retries: int = 3
     backoff_base_seconds: float = 0.35

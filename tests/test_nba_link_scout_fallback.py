@@ -115,6 +115,123 @@ def test_dynamic_fallback_module_adapter() -> None:
             module_path.unlink()
 
 
+def test_process_candidate_uses_fallback_when_fetch_fails() -> None:
+    game = Game(date="2026-02-10", home="A", away="B", game_id="G1")
+    candidate = UrlCandidate(
+        game=game,
+        target_site_name="basketball-video",
+        page_url="https://basketball-video.com/a-vs-b-full-game-replay-february-10-2026-nba",
+        link_search_rule=LinkSearchRule(
+            base_url="https://basketball-video.com",
+            include_patterns=("https://guidedesgemmes.com/",),
+            constraints=LinkConstraints(require_same_domain=False),
+        ),
+    )
+
+    class FailingFetcher:
+        def get_text(self, _url: str):  # noqa: ANN001
+            raise RuntimeError("403 Forbidden")
+
+    class DirectFallback:
+        def extract(self, *, page_url: str, html: str) -> list[str]:
+            if page_url.startswith("https://basketball-video.com/"):
+                return ["https://ok.ru/video/777777777"]
+            return []
+
+    result = _process_candidate(
+        candidate=candidate,
+        fetcher=FailingFetcher(),  # type: ignore[arg-type]
+        fallback_adapters=[DirectFallback()],  # type: ignore[list-item]
+        video_link_rule=LinkSearchRule(
+            base_url="https://ok.ru",
+            include_patterns=("https://ok.ru/video/",),
+            constraints=LinkConstraints(require_same_domain=False),
+        ),
+        logger=_SilentLogger(),
+    )
+    assert result.method_used == "fallback"
+    assert list(result.found_links) == ["https://ok.ru/video/777777777"]
+
+
+def test_selenium_like_fallback_disables_after_fatal_error() -> None:
+    game = Game(date="2026-02-10", home="A", away="B", game_id="G1")
+    candidate = UrlCandidate(
+        game=game,
+        target_site_name="basketball-video",
+        page_url="https://basketball-video.com/a-vs-b-full-game-replay-february-10-2026-nba",
+        link_search_rule=LinkSearchRule(
+            base_url="https://basketball-video.com",
+            include_patterns=("https://guidedesgemmes.com/",),
+            constraints=LinkConstraints(require_same_domain=False),
+        ),
+    )
+
+    class FailingFetcher:
+        def get_text(self, _url: str):  # noqa: ANN001
+            raise RuntimeError("403 Forbidden")
+
+    class FailingSelenium:
+        def __init__(self) -> None:
+            self.called = 0
+            self.config = type(
+                "Cfg",
+                (),
+                {
+                    "module_path": "extract_video_url_selenium.py",
+                    "function_name": "extract_okru_with_selenium",
+                },
+            )()
+
+        def extract(self, *, page_url: str, html: str) -> list[str]:
+            self.called += 1
+            raise RuntimeError("WebDriverException Stacktrace:")
+
+    class WorkingFallback:
+        def __init__(self) -> None:
+            self.called = 0
+
+        def extract(self, *, page_url: str, html: str) -> list[str]:
+            self.called += 1
+            return ["https://ok.ru/video/999999999"]
+
+    failing = FailingSelenium()
+    working = WorkingFallback()
+    disabled: set[str] = set()
+    failures: dict[str, int] = {}
+
+    result_1 = _process_candidate(
+        candidate=candidate,
+        fetcher=FailingFetcher(),  # type: ignore[arg-type]
+        fallback_adapters=[failing, working],  # type: ignore[list-item]
+        video_link_rule=LinkSearchRule(
+            base_url="https://ok.ru",
+            include_patterns=("https://ok.ru/video/",),
+            constraints=LinkConstraints(require_same_domain=False),
+        ),
+        disabled_fallback_keys=disabled,
+        fallback_failure_counts=failures,
+        logger=_SilentLogger(),
+    )
+    result_2 = _process_candidate(
+        candidate=candidate,
+        fetcher=FailingFetcher(),  # type: ignore[arg-type]
+        fallback_adapters=[failing, working],  # type: ignore[list-item]
+        video_link_rule=LinkSearchRule(
+            base_url="https://ok.ru",
+            include_patterns=("https://ok.ru/video/",),
+            constraints=LinkConstraints(require_same_domain=False),
+        ),
+        disabled_fallback_keys=disabled,
+        fallback_failure_counts=failures,
+        logger=_SilentLogger(),
+    )
+
+    assert list(result_1.found_links) == ["https://ok.ru/video/999999999"]
+    assert list(result_2.found_links) == ["https://ok.ru/video/999999999"]
+    assert failing.called == 1
+    assert working.called == 2
+
+
 class _SilentLogger:
     def error(self, *_args, **_kwargs):  # noqa: ANN001
         return None
