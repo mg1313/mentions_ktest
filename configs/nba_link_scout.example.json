@@ -1,0 +1,99 @@
+{
+  "schedule_source": {
+    "provider": "http_json",
+    "url_template": "https://your-schedule-provider.example/api/nba/schedule",
+    "request_params": {
+      "start_date": "{start_date}",
+      "end_date": "{end_date}"
+    },
+    "request_headers": {},
+    "games_path": "games",
+    "field_map": {
+      "game_id": "gameId",
+      "date": "date",
+      "home": "homeTeam",
+      "away": "awayTeam"
+    },
+    "date_format": "%Y-%m-%d",
+    "start_offset_days": 0,
+    "end_offset_days": 0,
+    "dry_run_games": [
+      {
+        "gameId": "0022600001",
+        "date": "2026-02-10",
+        "homeTeam": "Golden State Warriors",
+        "awayTeam": "San Antonio Spurs"
+      }
+    ]
+  },
+  "team_filter": [],
+  "target_sites": [
+    {
+      "name": "example-target",
+      "domain": "example.com",
+      "url_templates": [
+        "https://example.com/nba/{date_only}/{away_slug}-at-{home_slug}/{game_id}"
+      ],
+      "required_params": [
+        "game_id",
+        "date_only",
+        "home_slug",
+        "away_slug"
+      ],
+      "link_search_rule": {
+        "base_url": null,
+        "include_patterns": [
+          "/watch/",
+          "re:https://example.com/video/.*"
+        ],
+        "exclude_patterns": [
+          "preview",
+          "re:/ads?/.*"
+        ],
+        "collect_targets": [
+          "a.href",
+          "link.href",
+          "iframe.src",
+          "video.src",
+          "source.src"
+        ],
+        "constraints": {
+          "must_contain": [
+            "/watch/"
+          ],
+          "require_same_domain": true,
+          "allowed_schemes": [
+            "http",
+            "https"
+          ]
+        }
+      }
+    }
+  ],
+  "video_link_rule": {
+    "include_patterns": [
+      "https://ok.ru/video/"
+    ],
+    "exclude_patterns": [],
+    "constraints": {
+      "require_same_domain": false,
+      "allowed_schemes": [
+        "https"
+      ]
+    }
+  },
+  "fallback_extractors": [
+    {
+      "module_path": "extract_video_url_api.py",
+      "function_name": "extract_okru_url_from_page",
+      "function_kwargs": {}
+    }
+  ],
+  "daily_video_output_path": "data/daily_video_urls.json",
+  "http": {
+    "user_agent": "nba-link-scout/0.1",
+    "timeout_seconds": 15.0,
+    "max_retries": 3,
+    "backoff_base_seconds": 0.35
+  }
+}

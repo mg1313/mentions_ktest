@@ -1,0 +1,87 @@
+{
+  "schedule_source": {
+    "provider": "http_json",
+    "url_template": "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json",
+    "request_params": {},
+    "request_headers": {},
+    "games_path": "leagueSchedule.gameDates",
+    "field_map": {
+      "game_id": "gameId",
+      "date": "gameDateEst",
+      "home": "{homeTeam.teamCity} {homeTeam.teamName}",
+      "away": "{awayTeam.teamCity} {awayTeam.teamName}"
+    },
+    "date_format": "%Y-%m-%d",
+    "start_offset_days": 0,
+    "end_offset_days": 0
+  },
+  "target_sites": [
+    {
+      "name": "basketball-video",
+      "domain": "basketball-video.com",
+      "url_templates": [
+        "https://basketball-video.com/{away_slug}-vs-{home_slug}-full-game-replay-{month_name_lower}-{day_unpadded}-{year}-nba"
+      ],
+      "required_params": [
+        "away_slug",
+        "home_slug",
+        "month_name_lower",
+        "day_unpadded",
+        "year"
+      ],
+      "link_search_rule": {
+        "base_url": null,
+        "include_patterns": [
+          "https://guidedesgemmes.com/"
+        ],
+        "exclude_patterns": [],
+        "collect_targets": [
+          "a.href",
+          "iframe.src",
+          "link.href"
+        ],
+        "constraints": {
+          "must_contain": [
+            "https://guidedesgemmes.com/"
+          ],
+          "require_same_domain": false,
+          "allowed_schemes": [
+            "http",
+            "https"
+          ]
+        }
+      }
+    }
+  ],
+  "video_link_rule": {
+    "include_patterns": [
+      "re:^https://(?:www\\.)?ok\\.ru/video/"
+    ],
+    "exclude_patterns": [],
+    "constraints": {
+      "require_same_domain": false,
+      "allowed_schemes": [
+        "https"
+      ]
+    }
+  },
+  "fallback_extractors": [
+    {
+      "module_path": "C:\\Users\\mgube\\mentions_ktest\\extract_video_url_api.py",
+      "function_name": "extract_okru_url_from_page",
+      "function_kwargs": {}
+    },
+    {
+      "module_path": "C:\\Users\\mgube\\mentions_ktest\\extract_video_url_selenium.py",
+      "function_name": "extract_okru_with_selenium",
+      "function_kwargs": {}
+    }
+  ],
+  "daily_video_output_path": "data/nba_okru_daily.json",
+  "http": {
+    "user_agent": "nba-link-scout/0.1",
+    "timeout_seconds": 20.0,
+    "max_retries": 3,
+    "backoff_base_seconds": 0.35
+  }
+}

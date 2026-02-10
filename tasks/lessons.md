@@ -1,0 +1,71 @@
+# Lessons Learned
+
+## 2026-02-10 - Market scope fields are not present on `/markets` rows
+- What happened:
+  - Pre-flight showed `/markets?series_ticker=...` rows can have `series_ticker`, `category`, and `tags` unset.
+- Root cause:
+  - Scope metadata is guaranteed at series level, not always repeated at market row level.
+- Preventative rule:
+  - Enforce scope using in-scope series membership and ticker prefix checks, not market-row category/tags alone.
+- How to detect earlier:
+  - During pre-flight, print sample keys and explicitly verify presence/absence of scope fields before parser implementation.
+
+## 2026-02-10 - Pytest tmpdir plugin fails in this sandbox
+- What happened:
+  - Test runs errored on temp directory permissions during pytest setup/session cleanup.
+- Root cause:
+  - Sandbox environment restricts temp directory traversal expected by pytest tmpdir/cache providers.
+- Preventative rule:
+  - In this environment, run tests with `-p no:tmpdir -p no:cacheprovider` and keep test artifacts inside workspace paths.
+- How to detect earlier:
+  - Run a short pytest smoke command immediately after adding the first test that relies on temp fixtures.
+
+## 2026-02-10 - Dry-run provider wiring must not enforce network dependencies
+- What happened:
+  - `nba-link-scout dry-run` initially failed for `http_json` schedule source because provider creation required an HTTP fetcher.
+- Root cause:
+  - The provider factory validated non-dry-run dependencies during construction rather than during fetch execution.
+- Preventative rule:
+  - Allow provider construction without network clients when dry-run paths can satisfy output using local plan/sample data.
+- How to detect earlier:
+  - Add a CLI dry-run smoke check for each supported schedule provider mode before marking implementation complete.
+
+## 2026-02-10 - Config/schedule loaders must handle UTF-8 BOM on Windows
+- What happened:
+  - JSON parsing failed for config/schedule files written by PowerShell due to BOM bytes at file start.
+- Root cause:
+  - Loaders used `encoding="utf-8"` which does not strip BOM.
+- Preventative rule:
+  - Read user-provided JSON files with `utf-8-sig` for CLI-facing config/fixture inputs.
+- How to detect earlier:
+  - Add one test fixture saved with BOM encoding and verify loader behavior.
+
+## 2026-02-10 - Fallback chain debug logic should not assume concrete adapter class
+- What happened:
+  - Unit tests using lightweight stub fallback adapters failed because runner debug fields assumed `.config` exists.
+- Root cause:
+  - Runtime/debug code coupled to `FallbackExtractorAdapter` internals instead of duck-typing on `extract(...)`.
+- Preventative rule:
+  - In orchestrators, treat adapters by interface (`extract`) and make debug metadata resilient to missing optional attributes.
+- How to detect earlier:
+  - Keep at least one unit test using a plain stub object with only the minimal callable surface.
+
+## 2026-02-10 - NBA scoreboard source needs explicit schema mapping
+- What happened:
+  - User-provided endpoint format was valid, but default config assumed `games` at root and flat team fields.
+- Root cause:
+  - Source-specific JSON shape differences were not reflected in default template values.
+- Preventative rule:
+  - For each source template, encode known `games_path` and nested field mappings up front.
+- How to detect earlier:
+  - Add a dry-run check that inspects built request URL + a schema fixture for that source.
+
+## 2026-02-10 - Full-season NBA schedule requires nested list flattening
+- What happened:
+  - Full-season endpoint exposes `gameDates[]` buckets containing nested `games[]`, not a direct games list.
+- Root cause:
+  - Parser assumed `games_path` resolves directly to rows.
+- Preventative rule:
+  - Flatten known nested bucket shapes (`gameDates[].games[]`) in extraction helper when configured path lands on buckets.
+- How to detect earlier:
+  - Add unit tests for both direct game lists and bucketed list sources.

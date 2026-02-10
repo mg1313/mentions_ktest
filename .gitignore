@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Test/cache temp
+.pytest_cache/
+.pytest_tmp/
+pytest-cache-files-*/
+
+# Runtime outputs
+data/
+*.log
+
+# NBA link scout generated files
+*_link_results_*.json
+*_daily*.json
+tests/fixtures/_*.json
+
+# Local machine-specific configs (keep templates committed)
+configs/*.local.json
