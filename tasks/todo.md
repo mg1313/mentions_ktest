@@ -237,6 +237,7 @@
 - Hardened basketball-video fetching against 403 scenarios: no retry on non-retryable HTTP errors, browser-like configurable headers, and fallback extractor execution even when primary fetch fails.
 - Added fallback adapter circuit-breaker to disable Selenium extractor after first fatal WebDriver-style failure, reducing repeated stacktraces across games.
 - Hardened `extract_video_url_selenium.py` with modern headless options and fail-open behavior (`[]` on WebDriverException) to avoid noisy hard failures.
+- Added optional Playwright target-page fetch mode (`http.target_page_fetch_mode`) while keeping schedule fetch on `httpx`.
 
 ## Review
 - What changed:
@@ -263,5 +264,6 @@
   - Dry-run now shows schedule request URL `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`.
   - Re-ran after anti-403 hardening: `python -m pytest -q` -> 23 passed.
   - Re-ran after Selenium circuit-breaker: `python -m pytest -q` -> 24 passed.
+  - Re-ran after Playwright integration: `python -m pytest -q` -> 26 passed.
 - How to run:
   - `PYTHONPATH=src python -m mentions_sports_poller.nba_link_scout run --date 2026-02-10 --config configs/nba_link_scout.basketball_video.template.json --daily-video-output data/nba_okru_daily.json`

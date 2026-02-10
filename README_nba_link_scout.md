@@ -67,6 +67,8 @@ Key fields:
   - JSON file that is upserted each run with `date`, `home`, `away`, `video_url`
 - `http`
   - `user_agent`, `request_headers`, and `follow_redirects` can be set for stricter sites
+  - `target_page_fetch_mode`: `http` (default) or `playwright`
+  - Playwright options: `playwright_headless`, `playwright_wait_until`, `playwright_timeout_seconds`
 
 ## Output
 
@@ -86,4 +88,13 @@ For the basketball-video -> guidedesgemmes -> ok.ru workflow, see:
 
 - `configs/nba_link_scout.basketball_video.template.json`
   - Uses NBA full-season schedule endpoint (`scheduleLeagueV2.json`) and auto-flattens `leagueSchedule.gameDates[].games[]`.
-  - Includes browser-like HTTP headers to reduce 403 blocks.
+  - Uses Playwright for target pages to reduce 403 blocks from `basketball-video.com`.
+
+## Playwright Setup
+
+If using `target_page_fetch_mode: "playwright"`:
+
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+```

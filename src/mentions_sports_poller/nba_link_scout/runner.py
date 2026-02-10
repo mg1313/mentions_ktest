@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import ExitStack
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -9,6 +10,7 @@ from .fetcher import HttpFetcher
 from .game_selection import filter_games_for_date
 from .link_finder import apply_link_filters, extract_links_from_html, normalize_urls
 from .models import ExtractionResult, RunOptions, ScoutConfig
+from .playwright_fetcher import PlaywrightFetcher
 from .schedule import make_schedule_provider, make_schedule_query
 from .url_builder import build_urls_for_game
 
@@ -41,15 +43,25 @@ def run_link_scout(
     disabled_fallback_keys: set[str] = set()
     fallback_failure_counts: dict[str, int] = {}
 
-    with HttpFetcher(
-        timeout_seconds=timeout,
-        max_retries=retries,
-        backoff_base_seconds=config.http.backoff_base_seconds,
-        user_agent=config.http.user_agent,
-        request_headers=config.http.request_headers,
-        follow_redirects=config.http.follow_redirects,
-        logger=log,
-    ) as fetcher:
+    with ExitStack() as stack:
+        fetcher = stack.enter_context(
+            HttpFetcher(
+                timeout_seconds=timeout,
+                max_retries=retries,
+                backoff_base_seconds=config.http.backoff_base_seconds,
+                user_agent=config.http.user_agent,
+                request_headers=config.http.request_headers,
+                follow_redirects=config.http.follow_redirects,
+                logger=log,
+            )
+        )
+        target_page_fetcher = _build_target_page_fetcher(
+            stack=stack,
+            config=config,
+            options=options,
+            http_fetcher=fetcher,
+            logger=log,
+        )
         schedule_provider = make_schedule_provider(
             config=config.schedule_source,
             fetcher=None if options.dry_run else fetcher,
@@ -100,7 +112,7 @@ def run_link_scout(
 
                 url_result = _process_candidate(
                     candidate=candidate,
-                    fetcher=fetcher,
+                    fetcher=target_page_fetcher,
                     fallback_adapters=fallback_adapters,
                     video_link_rule=config.video_link_rule,
                     disabled_fallback_keys=disabled_fallback_keys,
@@ -123,7 +135,7 @@ def run_link_scout(
 def _process_candidate(
     *,
     candidate: Any,
-    fetcher: HttpFetcher,
+    fetcher: Any,
     fallback_adapters: list[FallbackExtractorAdapter],
     video_link_rule: Any | None,
     disabled_fallback_keys: set[str] | None = None,
@@ -338,3 +350,30 @@ def _unique_preserve_order(values: list[str]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _build_target_page_fetcher(
+    *,
+    stack: ExitStack,
+    config: ScoutConfig,
+    options: RunOptions,
+    http_fetcher: HttpFetcher,
+    logger: logging.Logger,
+) -> Any:
+    if options.dry_run:
+        return http_fetcher
+    mode = (config.http.target_page_fetch_mode or "http").strip().lower()
+    if mode == "http":
+        return http_fetcher
+    if mode == "playwright":
+        return stack.enter_context(
+            PlaywrightFetcher(
+                user_agent=config.http.user_agent,
+                request_headers=config.http.request_headers,
+                headless=config.http.playwright_headless,
+                wait_until=config.http.playwright_wait_until,
+                timeout_seconds=config.http.playwright_timeout_seconds,
+                logger=logger,
+            )
+        )
+    raise ValueError(f"unsupported http.target_page_fetch_mode: {config.http.target_page_fetch_mode}")

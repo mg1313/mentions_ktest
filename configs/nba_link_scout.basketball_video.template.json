@@ -86,6 +86,10 @@
       "Referer": "https://www.google.com/"
     },
     "follow_redirects": true,
+    "target_page_fetch_mode": "playwright",
+    "playwright_headless": true,
+    "playwright_wait_until": "domcontentloaded",
+    "playwright_timeout_seconds": 60.0,
     "timeout_seconds": 20.0,
     "max_retries": 3,
     "backoff_base_seconds": 0.35

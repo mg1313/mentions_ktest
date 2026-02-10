@@ -198,6 +198,13 @@ def _parse_http(raw: Any) -> HttpSettings:
         user_agent=_optional_str(raw.get("user_agent")) or "nba-link-scout/0.1",
         request_headers=_to_str_dict(raw.get("request_headers", {}), "http.request_headers"),
         follow_redirects=bool(raw.get("follow_redirects", True)),
+        target_page_fetch_mode=_optional_str(raw.get("target_page_fetch_mode")) or "http",
+        playwright_headless=bool(raw.get("playwright_headless", True)),
+        playwright_wait_until=_optional_str(raw.get("playwright_wait_until")) or "domcontentloaded",
+        playwright_timeout_seconds=_to_float(
+            raw.get("playwright_timeout_seconds", 60.0),
+            "http.playwright_timeout_seconds",
+        ),
         timeout_seconds=_to_float(raw.get("timeout_seconds", 15.0), "http.timeout_seconds"),
         max_retries=_to_int(raw.get("max_retries", 3), "http.max_retries"),
         backoff_base_seconds=_to_float(

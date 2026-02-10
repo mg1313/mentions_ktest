@@ -109,3 +109,13 @@
   - In optional extractors, catch WebDriver-level exceptions and return empty results so orchestrator can continue with other paths.
 - How to detect earlier:
   - Add integration smoke run with intentionally broken WebDriver and assert run completes with logged warnings, not hard errors.
+
+## 2026-02-10 - Anti-bot sites may require browser-fetch mode at the orchestrator level
+- What happened:
+  - Standalone Playwright probe succeeded on `basketball-video.com` while `httpx` was consistently blocked with 403.
+- Root cause:
+  - Transport-level anti-bot checks differentiated scripted HTTP clients from full browser execution.
+- Preventative rule:
+  - Keep fetch strategy configurable (`http` vs browser mode) and scope browser mode to target pages only to avoid over-broad complexity.
+- How to detect earlier:
+  - Run a one-page A/B probe (`httpx` vs Playwright) before deep debugging URL/parser logic when repeated 403s appear.
