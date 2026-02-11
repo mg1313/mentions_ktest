@@ -422,3 +422,58 @@
     - `python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --date 2026-02-09`
   - Game info packets:
     - `python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --output data/nba_game_info_2026-02-09.json`
+
+---
+
+# Task: GPT-4o Audio Transcription with Game Packet + Glossary Context
+
+## Scope Guard
+- [x] Transcribe a single downloaded audio file at a time (deterministic one-file workflow).
+- [x] Inject both game info packet context and `basketball_glossary.md` into transcription prompt.
+- [x] Keep network interactions isolated and mockable for tests.
+
+## Plan
+- [x] Add transcription module:
+  - Resolve audio row from manifest by `audio_id`.
+  - Resolve matching game packet (`date`, `away`, `home`) from game-info JSON.
+  - Load glossary file and build prompt context.
+  - Call OpenAI audio transcription endpoint with `gpt-4o-transcribe`.
+  - Return/write structured output JSON.
+- [x] Add CLI command:
+  - `nba-audio-dl transcribe --audio-id ... --manifest ... --game-info-file ...`
+  - Optional flags: model, glossary path, output path, timeout, dry-run.
+- [x] Add tests (no network):
+  - Prompt includes game packet + glossary context.
+  - Matching packet selection works.
+  - API client parsing and output shape works with mocked HTTP response.
+- [x] Update `RUNBOOK.md` transcription section with exact commands.
+
+## Acceptance Criteria
+- [x] Can transcribe one file via CLI using `gpt-4o-transcribe`.
+- [x] Prompt context includes relevant game packet + glossary.
+- [x] Tests pass locally with no-network mocking.
+
+## Progress Notes
+- Added `transcribe.py` with one-file transcription flow:
+  - resolves `audio_id` from manifest
+  - resolves matching game packet from game-info file
+  - injects packet + glossary text into prompt
+  - calls OpenAI `/v1/audio/transcriptions` with model `gpt-4o-transcribe`
+  - writes structured JSON output.
+- Extended `audio_cli.py` with `transcribe` subcommand and flags for model, glossary path, output path, timeout, and dry-run.
+- Added test module `tests/test_nba_transcribe.py` covering packet matching, prompt context composition, and mocked API request/response behavior.
+- Updated `RUNBOOK.md` with end-to-end transcription commands.
+
+## Review
+- What changed:
+  - Added `src/mentions_sports_poller/nba_link_scout/transcribe.py`.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py` with `transcribe` command.
+  - Added `tests/test_nba_transcribe.py`.
+  - Updated `RUNBOOK.md` with transcription workflow commands.
+- Why:
+  - Needed a deterministic one-file transcription workflow that uses both game packet context and basketball glossary context before calling `gpt-4o-transcribe`.
+- How tested:
+  - `python -m pytest -q tests/test_nba_transcribe.py tests/test_nba_audio_download.py -p no:tmpdir -p no:cacheprovider` -> `6 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `35 passed`.
+- How to run:
+  - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_YYYY-MM-DD.json --glossary-file basketball_glossary.md --output data/transcripts/<AUDIO_ID>.json`

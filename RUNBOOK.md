@@ -296,6 +296,32 @@ Manifest row highlights:
 Note:
 - MP3 extraction uses `yt-dlp` with ffmpeg postprocessing. Ensure ffmpeg is available in PATH.
 
+### 4.7 Transcribe One Audio File with GPT-4o Transcribe
+
+Prereq:
+
+- `OPENAI_API_KEY` set in your shell.
+- A game info packet file already generated via Workflow D.
+
+Generate game info packet file for the date if needed:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --output data/nba_game_info_2026-02-09.json
+```
+
+Transcribe one file by `audio_id` (uses game packet + `basketball_glossary.md` in prompt):
+
+```powershell
+$env:OPENAI_API_KEY = "<your-key>"
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --output data/transcripts/9ee9bf1cae01.json
+```
+
+Dry-run (no API call, validates matching + prompt build):
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --dry-run
+```
+
 ---
 
 ## 5. Workflow D: NBA Game Commentary Info Packets

@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .audio_download import download_audio_from_manifest, load_manifest_rows, sync_audio_manifest
+from .transcribe import TranscriptionError, transcribe_audio_from_manifest
 
 
 def main() -> None:
@@ -46,6 +47,24 @@ def main() -> None:
         print(json.dumps(stats, indent=2, sort_keys=True))
         return
 
+    if args.command == "transcribe":
+        try:
+            result = transcribe_audio_from_manifest(
+                manifest_file=args.manifest,
+                audio_id=args.audio_id,
+                game_info_file=args.game_info_file,
+                glossary_file=args.glossary_file,
+                model=args.model,
+                api_key_env=args.api_key_env,
+                timeout_seconds=args.timeout_seconds,
+                output_path=args.output,
+                dry_run=args.dry_run,
+            )
+        except (OSError, ValueError, TranscriptionError) as exc:
+            raise SystemExit(f"transcription failed: {exc}") from exc
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
     raise SystemExit(f"unknown command: {args.command}")
 
 
@@ -72,6 +91,32 @@ def _build_parser() -> argparse.ArgumentParser:
     select_group.add_argument("--date", help="Download all items for date YYYY-MM-DD")
     select_group.add_argument("--all-pending", action="store_true", help="Download all pending entries")
     download_parser.add_argument("--force", action="store_true", help="Re-download even if already downloaded")
+
+    transcribe_parser = subparsers.add_parser(
+        "transcribe",
+        help="Transcribe one downloaded audio file using gpt-4o-transcribe with game packet + glossary context",
+    )
+    transcribe_parser.add_argument("--manifest", default="data/nba_audio_manifest.json", help="Path to audio manifest JSON")
+    transcribe_parser.add_argument("--audio-id", required=True, help="audio_id from the manifest")
+    transcribe_parser.add_argument(
+        "--game-info-file",
+        required=True,
+        help="Path to game info packet file produced by nba-link-scout game-info",
+    )
+    transcribe_parser.add_argument(
+        "--glossary-file",
+        default="basketball_glossary.md",
+        help="Path to glossary markdown file for prompt context",
+    )
+    transcribe_parser.add_argument("--model", default="gpt-4o-transcribe", help="OpenAI transcription model")
+    transcribe_parser.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="Environment variable name containing OpenAI API key",
+    )
+    transcribe_parser.add_argument("--timeout-seconds", type=float, default=900.0, help="OpenAI request timeout in seconds")
+    transcribe_parser.add_argument("--output", help="Write transcription JSON output to this path")
+    transcribe_parser.add_argument("--dry-run", action="store_true", help="Build prompt/output plan without API call")
 
     return parser
 

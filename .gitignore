@@ -19,3 +19,7 @@ tests/fixtures/_*.json
 
 # Local machine-specific configs (keep templates committed)
 configs/*.local.json
+
+# env vars
+.env
+*.env

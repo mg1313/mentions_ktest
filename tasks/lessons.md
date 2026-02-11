@@ -149,3 +149,13 @@
   - Model commentary outputs with two layers: named `commentators` when available and `broadcast_teams` fallback metadata when names are absent.
 - How to detect earlier:
   - Add fixture tests for both payload shapes (with and without announcer name keys) before wiring downstream transcript attribution logic.
+
+## 2026-02-11 - Transcript context joins should key on normalized game identity
+- What happened:
+  - Transcription context needs the correct game packet for each audio feed; mismatched joins would silently degrade transcription quality.
+- Root cause:
+  - Audio and game-info outputs are produced by separate workflows and need an explicit join contract.
+- Preventative rule:
+  - Join audio rows to game packets using normalized (`date`, `away`, `home`) keys and fail fast when no exact match exists.
+- How to detect earlier:
+  - Add unit tests that verify successful match and explicit failure on non-matching game metadata.
