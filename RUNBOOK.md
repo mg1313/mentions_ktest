@@ -100,6 +100,24 @@ $env:PYTHONPATH = "src"
 python -m mentions_sports_poller.nba_link_scout run --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --daily-video-output data/nba_okru_daily.json --output data/nba_link_results_2026-02-09.json
 ```
 
+```run in loop
+$env:PYTHONPATH = "src"
+
+$start = Get-Date "2026-02-01"
+$end   = Get-Date "2026-02-09"
+
+for ($d = $start; $d -le $end; $d = $d.AddDays(1)) {
+    $dateStr = $d.ToString("yyyy-MM-dd")
+
+    python -m mentions_sports_poller.nba_link_scout run `
+        --date $dateStr `
+        --config configs/nba_link_scout.basketball_video.template.json `
+        --daily-video-output data/nba_okru_daily_$dateStr.json `
+        --output data/nba_link_results_$dateStr.json
+}
+
+```
+
 Equivalent CLI entrypoint:
 
 ```powershell
@@ -195,7 +213,86 @@ Optional flags:
 
 ---
 
-## 4. Validation Commands
+## 4. Workflow C: Audio Download (Start Here for Transcription Pipeline)
+
+This workflow consumes `data/nba_okru_daily.json` (paired video links per game) and creates a download manifest with stable IDs.
+
+### 4.1 Build / Refresh Audio Manifest
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m mentions_sports_poller.nba_link_scout.audio_cli sync --daily-video-file data/nba_okru_daily.json --manifest data/nba_audio_manifest.json
+```
+
+Equivalent entrypoint:
+
+```powershell
+nba-audio-dl sync --daily-video-file data/nba_okru_daily.json --manifest data/nba_audio_manifest.json
+```
+
+### 4.2 See What Is Pending / Downloaded
+
+All rows:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli list --manifest data/nba_audio_manifest.json
+```
+
+Pending for one day:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli list --manifest data/nba_audio_manifest.json --date 2026-02-09 --status pending
+```
+
+JSON output (for scripting):
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli list --manifest data/nba_audio_manifest.json --json
+```
+
+### 4.3 Download Audio for All Games in a Day
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --date 2026-02-09
+```
+
+### 4.4 Download One at a Time (by `audio_id`)
+
+Find the ID from `list`, then:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --audio-id 3f9d5b2aa1c0
+```
+
+### 4.5 Download Everything Still Pending
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --all-pending
+```
+
+### 4.6 Output / Tracking Files
+
+- Manifest (what is pending/downloaded/failed):
+  - `data/nba_audio_manifest.json`
+- Audio files:
+  - `data/audio/*.mp3`
+
+Manifest row highlights:
+
+- `audio_id` (stable, easy reference for one-at-a-time downloads)
+- `date`, `away`, `home`, `feed_label` (`main`, `backup`, or `extra_n`)
+- `status` (`pending`, `downloading`, `downloaded`, `failed`)
+- `video_url`
+- `audio_path`
+- `downloaded_at_utc`
+- `error`
+
+Note:
+- MP3 extraction uses `yt-dlp` with ffmpeg postprocessing. Ensure ffmpeg is available in PATH.
+
+---
+
+## 5. Validation Commands
 
 Run tests:
 
@@ -203,7 +300,7 @@ Run tests:
 python -m pytest -q -p no:tmpdir -p no:cacheprovider
 ```
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 - `ModuleNotFoundError: No module named 'mentions_sports_poller'`
 - Set `PYTHONPATH=src` before running module commands.
