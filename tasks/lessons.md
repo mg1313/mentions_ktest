@@ -129,3 +129,13 @@
   - Persist link provenance (`video_url` + `extracted_from_url`) and build per-game paired outputs that prefer same-source feed links.
 - How to detect earlier:
   - Add a unit test with 3+ links from mixed source pages and assert pair selection from the preferred intermediary domain.
+
+## 2026-02-11 - Distinct workflows should use explicit subpackages
+- What happened:
+  - Mentions polling modules and NBA video-link modules were colocated in the same package root, which blurred boundaries between two independent processes.
+- Root cause:
+  - Initial package layout optimized for speed of implementation rather than long-term workflow separation.
+- Preventative rule:
+  - Keep each workflow in its own explicit subpackage (`mentions_api`, `nba_link_scout`) and point CLI entrypoints directly at workflow-specific modules.
+- How to detect earlier:
+  - During first pass of project structure review, verify each top-level module belongs to exactly one workflow.

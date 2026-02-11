@@ -1,7 +1,7 @@
 import pytest
 
-from mentions_sports_poller.orderbook import normalize_orderbook
-from mentions_sports_poller.types import SIDE_NO_ASK, SIDE_NO_BID, SIDE_YES_ASK, SIDE_YES_BID
+from mentions_sports_poller.mentions_api.orderbook import normalize_orderbook
+from mentions_sports_poller.mentions_api.types import SIDE_NO_ASK, SIDE_NO_BID, SIDE_YES_ASK, SIDE_YES_BID
 
 
 def test_normalize_orderbook_derives_asks_from_complement() -> None:

@@ -1,5 +1,5 @@
-from mentions_sports_poller.types import OrderbookLevel, SIDE_YES_ASK
-from mentions_sports_poller.vwap import INSUFFICIENT_DEPTH, compute_budget_vwap
+from mentions_sports_poller.mentions_api.types import OrderbookLevel, SIDE_YES_ASK
+from mentions_sports_poller.mentions_api.vwap import INSUFFICIENT_DEPTH, compute_budget_vwap
 
 
 def _levels(data: list[tuple[float, int]]) -> list[OrderbookLevel]:

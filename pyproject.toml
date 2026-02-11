@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-mentions-sports-poller = "mentions_sports_poller.main:main"
+mentions-sports-poller = "mentions_sports_poller.mentions_api.main:main"
 nba-link-scout = "mentions_sports_poller.nba_link_scout.cli:main"
 
 [tool.pytest.ini_options]

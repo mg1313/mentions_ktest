@@ -239,6 +239,8 @@
 - Hardened `extract_video_url_selenium.py` with modern headless options and fail-open behavior (`[]` on WebDriverException) to avoid noisy hard failures.
 - Added optional Playwright target-page fetch mode (`http.target_page_fetch_mode`) while keeping schedule fetch on `httpx`.
 - Added paired daily output workflow: one row per game with `main_video_url` + `backup_video_url`, preferring links extracted from the same intermediary guide page.
+- Updated `RUNBOOK.md` with fully separated workflow sections and added date-range execution script docs.
+- Added script `scripts/run_nba_link_range.ps1` to run `nba-link-scout` across an inclusive date range.
 
 ## Review
 - What changed:
@@ -267,5 +269,87 @@
   - Re-ran after Selenium circuit-breaker: `python -m pytest -q` -> 24 passed.
   - Re-ran after Playwright integration: `python -m pytest -q` -> 26 passed.
   - Re-ran after paired-link workflow update: `python -m pytest -q` -> 27 passed.
+  - Script smoke check: `powershell -ExecutionPolicy Bypass -File scripts/run_nba_link_range.ps1 -StartDate 2026-02-09 -EndDate 2026-02-09 -ConfigPath configs/nba_link_scout.basketball_video.template.json -OutputDir data -DryRun` -> success.
 - How to run:
   - `PYTHONPATH=src python -m mentions_sports_poller.nba_link_scout run --date 2026-02-10 --config configs/nba_link_scout.basketball_video.template.json --daily-video-output data/nba_okru_daily.json`
+
+---
+
+# Task: Folder Restructure for Mentions API Workflow
+
+## Scope Guard (Hard)
+- [x] Do not modify NBA schedule/video workflow logic or locations.
+- [x] Move only Mentions data API/poller code into its own workflow section.
+- [x] Keep Mentions -> Sports scope behavior unchanged.
+
+## Plan
+- [x] Create a dedicated Mentions workflow section under `src/mentions_sports_poller/mentions_api/`.
+- [x] Move Mentions modules (`config`, `kalshi_client`, `discovery`, `scope`, `orderbook`, `vwap`, `storage`, `poller`, `time_utils`, `types`, `main`) into that section.
+- [x] Update internal imports and package exports to reflect new paths.
+- [x] Update CLI entrypoint for Mentions poller to new module path.
+- [x] Update Mentions-related tests/imports only.
+- [x] Run pytest to verify no behavioral regressions.
+
+## Acceptance Criteria
+- [x] Mentions code exists in a dedicated folder section separate from schedule/video workflow code.
+- [x] `mentions-sports-poller` entrypoint still runs.
+- [x] Existing NBA link scout imports and tests remain unchanged.
+- [x] Tests pass after path updates.
+
+## Progress Notes
+- Found current mix: Mentions modules at `src/mentions_sports_poller/*` and video workflow at `src/mentions_sports_poller/nba_link_scout/*`.
+- Chosen restructure: place Mentions modules under `src/mentions_sports_poller/mentions_api/` and rewire only Mentions imports/entrypoints.
+- Moved all Mentions modules into `src/mentions_sports_poller/mentions_api/`.
+- Updated package exports in `src/mentions_sports_poller/__init__.py` to import from `mentions_api`.
+- Updated script entrypoint in `pyproject.toml` to `mentions_sports_poller.mentions_api.main:main`.
+- Updated only Mentions tests to new import paths; NBA tests/imports unchanged.
+- Verified with pytest: `27 passed`.
+
+## Review
+- What changed:
+  - Relocated Mentions workflow modules into `src/mentions_sports_poller/mentions_api/`:
+    - `config.py`, `kalshi_client.py`, `discovery.py`, `scope.py`, `orderbook.py`, `vwap.py`, `storage.py`, `poller.py`, `time_utils.py`, `types.py`, `main.py`.
+  - Added `src/mentions_sports_poller/mentions_api/__init__.py`.
+  - Updated `src/mentions_sports_poller/__init__.py` exports to reference `mentions_api`.
+  - Updated `pyproject.toml` entrypoint for `mentions-sports-poller`.
+  - Updated Mentions-only tests import paths:
+    - `tests/test_vwap.py`
+    - `tests/test_storage_idempotent.py`
+    - `tests/test_scope_and_discovery.py`
+    - `tests/test_retry.py`
+    - `tests/test_orderbook.py`
+- Why:
+  - To separate the Mentions polling/data API workflow from the schedule/video-link workflow while keeping both processes in the same repository.
+- How tested:
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `27 passed`.
+- How to run:
+  - Mentions poller once: `python -m mentions_sports_poller.mentions_api.main --once`
+  - Mentions poller continuous: `python -m mentions_sports_poller.mentions_api.main`
+  - Installed entrypoint: `mentions-sports-poller --once`
+
+---
+
+# Task: Add Operational Runbook
+
+## Scope Guard
+- [x] Add documentation only.
+- [x] Do not change workflow logic.
+
+## Plan
+- [x] Create standard root runbook file for operational commands.
+- [x] Include both workflows with setup, run-once, continuous run, outputs, and troubleshooting.
+
+## Acceptance Criteria
+- [x] A single discoverable runbook exists at repo root.
+- [x] Commands for running Mentions once are explicit and copy-paste ready.
+- [x] Commands for NBA link scout run/dry-run are documented.
+
+## Review
+- What changed:
+  - Added `RUNBOOK.md` with operational instructions for `mentions-sports-poller` and `nba-link-scout`.
+- Why:
+  - Provide a single standard operations note for running the functions created in this repo.
+- How tested:
+  - Verified command paths and module targets against current package layout and entrypoints.
+- How to run:
+  - Open `RUNBOOK.md` and run commands from repository root.

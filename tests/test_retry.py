@@ -1,6 +1,6 @@
 import httpx
 
-from mentions_sports_poller.kalshi_client import KalshiClient
+from mentions_sports_poller.mentions_api.kalshi_client import KalshiClient
 
 
 class FakeResponse:

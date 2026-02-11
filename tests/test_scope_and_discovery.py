@@ -1,9 +1,9 @@
 from datetime import timedelta
 
-from mentions_sports_poller.discovery import discover_open_mentions_sports_markets, select_active_tickers
-from mentions_sports_poller.scope import validate_market_scope
-from mentions_sports_poller.time_utils import utc_now
-from mentions_sports_poller.types import DiscoveredMarket
+from mentions_sports_poller.mentions_api.discovery import discover_open_mentions_sports_markets, select_active_tickers
+from mentions_sports_poller.mentions_api.scope import validate_market_scope
+from mentions_sports_poller.mentions_api.time_utils import utc_now
+from mentions_sports_poller.mentions_api.types import DiscoveredMarket
 
 
 class FakeClient:
