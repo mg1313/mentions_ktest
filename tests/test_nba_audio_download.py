@@ -97,3 +97,67 @@ def test_download_audio_for_date_updates_manifest_status() -> None:
             for file in output_dir.glob("*"):
                 file.unlink()
             output_dir.rmdir()
+
+
+def test_download_audio_emits_progress_events() -> None:
+    manifest_path = Path("tests/fixtures/_audio_manifest_progress.json")
+    output_dir = Path("tests/fixtures/_audio_progress_files")
+    events: list[dict] = []
+    try:
+        manifest_rows = [
+            {
+                "audio_id": "abc123",
+                "date": "2026-02-09",
+                "away": "Philadelphia 76ers",
+                "home": "Portland Trail Blazers",
+                "feed_label": "main",
+                "video_url": "https://ok.ru/video/111",
+                "source_feed_page": "https://guidedesgemmes.com/x",
+                "status": "pending",
+                "audio_path": "",
+                "downloaded_at_utc": "",
+                "error": "",
+            }
+        ]
+        manifest_path.write_text(json.dumps(manifest_rows), encoding="utf-8")
+
+        def fake_downloader(
+            video_url: str,
+            output_mp3_path: Path,
+            progress_callback=None,
+        ) -> None:
+            if progress_callback:
+                progress_callback(
+                    {
+                        "event": "file_progress",
+                        "remaining_percent": 50.0,
+                        "downloaded_bytes": 500.0,
+                        "total_bytes": 1000.0,
+                    }
+                )
+            output_mp3_path.parent.mkdir(parents=True, exist_ok=True)
+            output_mp3_path.write_text(f"downloaded {video_url}", encoding="utf-8")
+
+        stats = download_audio_from_manifest(
+            manifest_file=manifest_path,
+            output_dir=output_dir,
+            date="2026-02-09",
+            all_pending=False,
+            downloader=fake_downloader,
+            progress_callback=lambda event: events.append(dict(event)),
+        )
+        assert stats["selected"] == 1
+        assert stats["downloaded"] == 1
+        assert any(event.get("event") == "file_start" for event in events)
+        progress_events = [event for event in events if event.get("event") == "file_progress"]
+        assert progress_events
+        assert progress_events[0].get("remaining_percent") == 50.0
+        assert progress_events[0].get("remaining_files") == 0
+        assert any(event.get("event") == "file_done" for event in events)
+    finally:
+        if manifest_path.exists():
+            manifest_path.unlink()
+        if output_dir.exists():
+            for file in output_dir.glob("*"):
+                file.unlink()
+            output_dir.rmdir()

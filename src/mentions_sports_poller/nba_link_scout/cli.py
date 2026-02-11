@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from datetime import date
 from pathlib import Path
 
 from .config import ConfigError, load_scout_config
+from .game_info import DEFAULT_BOXSCORE_URL_TEMPLATE, build_game_info_packets
 from .models import RunOptions
 from .output import to_json_output, to_table_output, update_daily_video_output_file
 from .runner import run_link_scout
@@ -23,6 +25,26 @@ def main() -> None:
         raise SystemExit(f"failed to load config: {exc}") from exc
 
     requested_date = _parse_date(args.date)
+
+    if args.command == "game-info":
+        team_filter = tuple(args.team or ())
+        payload = build_game_info_packets(
+            config=config,
+            requested_date=requested_date,
+            team_filter=team_filter if team_filter else None,
+            dry_run=bool(args.dry_run),
+            timeout_seconds=args.timeout,
+            max_retries=args.max_retries,
+            boxscore_url_template=args.boxscore_url_template,
+            logger=logger,
+        )
+        output_json = json.dumps(payload, indent=2, sort_keys=True)
+        if args.output:
+            Path(args.output).write_text(output_json, encoding="utf-8")
+        else:
+            print(output_json)
+        return
+
     options = RunOptions(
         requested_date=requested_date,
         dry_run=(args.command == "dry-run"),
@@ -72,6 +94,21 @@ def _build_parser() -> argparse.ArgumentParser:
             help="Path to JSON file updated with date/home/away/main_video_url/backup_video_url rows",
         )
         command_parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity")
+
+    info_parser = subparsers.add_parser("game-info")
+    info_parser.add_argument("--date", required=True, help="Date in YYYY-MM-DD")
+    info_parser.add_argument("--config", required=True, help="Path to JSON config file")
+    info_parser.add_argument("--output", help="Write JSON output to file")
+    info_parser.add_argument("--team", action="append", help="Optional team filter; can be passed multiple times")
+    info_parser.add_argument("--dry-run", action="store_true", help="Plan-only mode with no network calls")
+    info_parser.add_argument(
+        "--boxscore-url-template",
+        default=DEFAULT_BOXSCORE_URL_TEMPLATE,
+        help="Per-game boxscore URL template containing {game_id}",
+    )
+    info_parser.add_argument("--timeout", type=float, help="Override HTTP timeout (seconds)")
+    info_parser.add_argument("--max-retries", type=int, help="Override HTTP max retries")
+    info_parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity")
 
     return parser
 

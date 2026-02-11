@@ -353,3 +353,72 @@
   - Verified command paths and module targets against current package layout and entrypoints.
 - How to run:
   - Open `RUNBOOK.md` and run commands from repository root.
+
+---
+
+# Task: Audio Download Progress + NBA Game Commentary Info Packets
+
+## Scope Guard
+- [x] Keep existing NBA link discovery and audio manifest semantics unchanged.
+- [x] Add progress reporting to audio download CLI without introducing non-deterministic dependencies.
+- [x] Build game info packets from NBA API endpoints only (no browser scraping).
+
+## Plan
+- [x] Add download progress callbacks in audio downloader:
+  - Log file index and remaining file count.
+  - Emit per-file remaining percentage when byte totals or ETA-based estimates are available.
+  - Fallback to ordinal status (`downloading file #n`) when no totals are available.
+- [x] Add NBA game info packet builder module:
+  - Use existing schedule source config and date filtering.
+  - Fetch game boxscore payloads for selected games.
+  - Extract home/away rosters and broadcast/commentary metadata.
+  - Clearly separate `commentators` (actual names if present) vs `broadcast_teams` (network-level entries).
+- [x] Add CLI command surface for info packets:
+  - `nba-link-scout game-info --date YYYY-MM-DD --config ... --output ...`
+  - Optional `--team` filter and `--dry-run`.
+- [x] Add tests (no network):
+  - Progress callback behavior for known and unknown totals.
+  - Game info extraction from mocked schedule + mocked boxscore payloads.
+  - Commentator metadata fallback semantics.
+- [x] Update `RUNBOOK.md` with new usage commands.
+
+## Acceptance Criteria
+- [x] `nba-audio-dl download ...` logs remaining file count and per-file remaining percentage when available.
+- [x] `nba-link-scout game-info --date ...` outputs per-game packets with roster and commentary metadata.
+- [x] Tests pass locally with pytest (no network).
+
+## Progress Notes
+- Added structured download progress events in `audio_download.py` and wired terminal progress reporting in `audio_cli.py`.
+- Progress output now includes per-file ordinal (`file i/N`), remaining files, and estimated remaining percent when available from yt-dlp progress signals.
+- Added `game_info.py` packet builder using existing schedule provider + per-game boxscore fetch.
+- Added `nba-link-scout game-info` command with `--team`, `--dry-run`, and `--boxscore-url-template`.
+- Added tests for progress events and game info packet extraction/fallback commentary behavior.
+- Updated `RUNBOOK.md` with the new game-info workflow and audio progress notes.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_download.py`:
+    - Added per-file progress callback flow.
+    - Added compatibility layer for 2-arg and 3-arg downloader callables.
+    - Added yt-dlp hook-based remaining-percent estimation.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py`:
+    - Added live progress reporter output for `download` command.
+  - Added `src/mentions_sports_poller/nba_link_scout/game_info.py`:
+    - Built per-game packets with roster + commentary metadata.
+  - Updated `src/mentions_sports_poller/nba_link_scout/cli.py`:
+    - Added `game-info` subcommand.
+  - Added tests:
+    - `tests/test_nba_link_scout_game_info.py`
+    - updated `tests/test_nba_audio_download.py` with progress event assertions.
+  - Updated docs:
+    - `RUNBOOK.md` (audio progress notes + game-info command usage).
+- Why:
+  - Needed clearer runtime visibility during long audio downloads and a reusable daily game context packet that includes roster and commentary metadata for downstream transcription.
+- How tested:
+  - `python -m pytest -q tests/test_nba_audio_download.py tests/test_nba_link_scout_game_info.py -p no:tmpdir -p no:cacheprovider` -> `5 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `32 passed`.
+- How to run:
+  - Audio download with progress:
+    - `python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --date 2026-02-09`
+  - Game info packets:
+    - `python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --output data/nba_game_info_2026-02-09.json`

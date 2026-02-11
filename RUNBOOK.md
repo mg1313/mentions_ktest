@@ -256,6 +256,12 @@ python -m mentions_sports_poller.nba_link_scout.audio_cli list --manifest data/n
 python -m mentions_sports_poller.nba_link_scout.audio_cli download --manifest data/nba_audio_manifest.json --output-dir data/audio --date 2026-02-09
 ```
 
+Progress behavior during download:
+
+- Prints `file i/N` with remaining file count.
+- Prints approximate remaining percent for the current file when available.
+- If percent cannot be estimated, prints ordinal progress (`downloading file #...` style status).
+
 ### 4.4 Download One at a Time (by `audio_id`)
 
 Find the ID from `list`, then:
@@ -292,7 +298,44 @@ Note:
 
 ---
 
-## 5. Validation Commands
+## 5. Workflow D: NBA Game Commentary Info Packets
+
+Build per-game packets containing:
+
+- `date`, `game_id`, `away`, `home`
+- away/home roster (from NBA boxscore payload)
+- commentary metadata:
+  - named `commentators` if present in NBA broadcaster-related fields
+  - `broadcast_teams` network metadata fallback
+
+Run:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --output data/nba_game_info_2026-02-09.json
+```
+
+Team-filtered run:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --team "Philadelphia 76ers" --output data/nba_game_info_2026-02-09.json
+```
+
+Dry run (no network):
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --dry-run
+```
+
+Optional override for boxscore endpoint template:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --boxscore-url-template "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
+```
+
+---
+
+## 6. Validation Commands
 
 Run tests:
 
@@ -300,7 +343,7 @@ Run tests:
 python -m pytest -q -p no:tmpdir -p no:cacheprovider
 ```
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 - `ModuleNotFoundError: No module named 'mentions_sports_poller'`
 - Set `PYTHONPATH=src` before running module commands.

@@ -139,3 +139,13 @@
   - Keep each workflow in its own explicit subpackage (`mentions_api`, `nba_link_scout`) and point CLI entrypoints directly at workflow-specific modules.
 - How to detect earlier:
   - During first pass of project structure review, verify each top-level module belongs to exactly one workflow.
+
+## 2026-02-11 - NBA boxscore broadcaster fields may omit named commentators
+- What happened:
+  - Commentary packet generation could not rely on consistently present announcer/commentator name fields in NBA boxscore payloads.
+- Root cause:
+  - Broadcaster metadata is often network/station-level and does not guarantee explicit on-air talent names.
+- Preventative rule:
+  - Model commentary outputs with two layers: named `commentators` when available and `broadcast_teams` fallback metadata when names are absent.
+- How to detect earlier:
+  - Add fixture tests for both payload shapes (with and without announcer name keys) before wiring downstream transcript attribution logic.

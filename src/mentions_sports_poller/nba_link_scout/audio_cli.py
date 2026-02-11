@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 
 from .audio_download import download_audio_from_manifest, load_manifest_rows, sync_audio_manifest
@@ -31,6 +32,7 @@ def main() -> None:
         return
 
     if args.command == "download":
+        progress_reporter = DownloadProgressReporter()
         stats = download_audio_from_manifest(
             manifest_file=args.manifest,
             output_dir=args.output_dir,
@@ -39,6 +41,7 @@ def main() -> None:
             all_pending=args.all_pending,
             force=args.force,
             logger=logger,
+            progress_callback=progress_reporter.handle_event,
         )
         print(json.dumps(stats, indent=2, sort_keys=True))
         return
@@ -110,6 +113,91 @@ def _render_rows_table(rows: list[dict]) -> str:
     if not data:
         lines.append("(no rows)")
     return "\n".join(lines)
+
+
+class DownloadProgressReporter:
+    def __init__(self) -> None:
+        self._last_bucket_by_file: dict[tuple[int, int], int] = {}
+        self._last_emit_by_file: dict[tuple[int, int], float] = {}
+        self._last_unknown_emit_by_file: dict[tuple[int, int], float] = {}
+
+    def handle_event(self, event: dict) -> None:
+        event_type = str(event.get("event", ""))
+        index = int(event.get("index", 0))
+        total_files = int(event.get("total_files", 0))
+        remaining_files = int(event.get("remaining_files", 0))
+        file_key = (index, total_files)
+        if event_type == "file_start":
+            matchup = f"{event.get('away', '')} @ {event.get('home', '')}".strip()
+            print(
+                f"[download] file {index}/{total_files} starting (remaining after this: {remaining_files})"
+                f" | {matchup} | {event.get('feed_label', '')}",
+                flush=True,
+            )
+            return
+        if event_type == "file_done":
+            print(
+                f"[download] file {index}/{total_files} done (remaining files: {remaining_files})",
+                flush=True,
+            )
+            return
+        if event_type == "file_skipped":
+            print(
+                f"[download] file {index}/{total_files} skipped (remaining files: {remaining_files})",
+                flush=True,
+            )
+            return
+        if event_type == "file_failed":
+            print(
+                f"[download] file {index}/{total_files} failed (remaining files: {remaining_files})"
+                f" | {event.get('error', '')}",
+                flush=True,
+            )
+            return
+        if event_type != "file_progress":
+            return
+
+        remaining_pct = event.get("remaining_percent")
+        now = time.time()
+        if isinstance(remaining_pct, (int, float)):
+            value = max(0.0, min(100.0, float(remaining_pct)))
+            bucket = int(value // 5)
+            last_bucket = self._last_bucket_by_file.get(file_key)
+            last_emit = self._last_emit_by_file.get(file_key, 0.0)
+            if last_bucket == bucket and (now - last_emit) < 10.0:
+                return
+            self._last_bucket_by_file[file_key] = bucket
+            self._last_emit_by_file[file_key] = now
+            print(
+                f"[download] file {index}/{total_files} remaining ~{value:.1f}%"
+                f" | remaining files after this: {remaining_files}",
+                flush=True,
+            )
+            return
+
+        last_unknown = self._last_unknown_emit_by_file.get(file_key, 0.0)
+        if (now - last_unknown) < 15.0:
+            return
+        self._last_unknown_emit_by_file[file_key] = now
+        duration_seconds = event.get("duration_seconds")
+        duration_text = ""
+        if isinstance(duration_seconds, (int, float)) and float(duration_seconds) > 0:
+            duration_text = f" | source duration ~{_format_duration(float(duration_seconds))}"
+        print(
+            f"[download] file {index}/{total_files} downloading (progress estimate unavailable)"
+            f" | remaining files after this: {remaining_files}{duration_text}",
+            flush=True,
+        )
+
+
+def _format_duration(value: float) -> str:
+    total_seconds = int(value)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    if hours > 0:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    return f"{minutes}m{seconds:02d}s"
 
 
 if __name__ == "__main__":
