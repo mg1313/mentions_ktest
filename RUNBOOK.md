@@ -316,6 +316,16 @@ $env:OPENAI_API_KEY = "<your-key>"
 python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --output data/transcripts/9ee9bf1cae01.json
 ```
 
+Quick test on first 30 seconds only:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --max-seconds 30 --output data/transcripts/9ee9bf1cae01.test30s.json
+```
+
+Progress:
+
+- Transcription CLI prints stage-based `%` updates (start -> context -> optional clipping -> API -> complete).
+
 Dry-run (no API call, validates matching + prompt build):
 
 ```powershell

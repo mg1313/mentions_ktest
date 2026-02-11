@@ -474,6 +474,58 @@
   - Needed a deterministic one-file transcription workflow that uses both game packet context and basketball glossary context before calling `gpt-4o-transcribe`.
 - How tested:
   - `python -m pytest -q tests/test_nba_transcribe.py tests/test_nba_audio_download.py -p no:tmpdir -p no:cacheprovider` -> `6 passed`.
-  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `35 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `36 passed`.
 - How to run:
   - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_YYYY-MM-DD.json --glossary-file basketball_glossary.md --output data/transcripts/<AUDIO_ID>.json`
+
+---
+
+# Task: Transcription Test Clip + Progress Percent
+
+## Scope Guard
+- [x] Keep existing one-file transcription behavior default unchanged.
+- [x] Add optional first-N-seconds transcription mode for quick tests.
+- [x] Add deterministic, visible percent progress for transcription CLI.
+
+## Plan
+- [x] Add `--max-seconds` support in transcription workflow:
+  - Clip source audio to first N seconds before API upload.
+  - Use ffmpeg for clipping and keep implementation isolated/testable.
+- [x] Add transcription progress callback/events:
+  - Stage-based percent updates from start to completion.
+  - CLI output should show `%` progress.
+- [x] Add tests (no network):
+  - Progress callback emits expected stage percents.
+  - Max-seconds path invokes clipper and transcribes clipped path.
+- [x] Update `RUNBOOK.md` with quick 30-second test command.
+
+## Acceptance Criteria
+- [x] User can run `transcribe --max-seconds 30` to test on first 30 seconds.
+- [x] CLI prints percent progress during transcription.
+- [x] Tests pass locally.
+
+## Progress Notes
+- Added `max_seconds` clipping support in `transcribe.py` with ffmpeg-backed clip creation before upload.
+- Added transcription progress events (`transcription_progress`) and stage percentages in the core transcription flow.
+- Added `TranscriptionProgressReporter` in `audio_cli.py` to print progress percent lines during transcribe runs.
+- Added CLI flags `--max-seconds` and `--ffmpeg-bin` to `nba-audio-dl transcribe`.
+- Updated `RUNBOOK.md` with first-30-seconds quick test command and progress notes.
+- Added test coverage for max-seconds clipping path and progress percentage event emission.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/nba_link_scout/transcribe.py`:
+    - Added optional clipping (`max_seconds`) via ffmpeg.
+    - Added progress callback events with stage-based percents.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py`:
+    - Added `--max-seconds`, `--ffmpeg-bin`.
+    - Added `TranscriptionProgressReporter`.
+  - Updated docs: `RUNBOOK.md`.
+  - Updated tests: `tests/test_nba_transcribe.py`.
+- Why:
+  - Needed fast test transcriptions on only first 30s and visible progress feedback for long-running transcribe calls.
+- How tested:
+  - `python -m pytest -q tests/test_nba_transcribe.py -p no:tmpdir -p no:cacheprovider`
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider`
+- How to run:
+  - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_YYYY-MM-DD.json --glossary-file basketball_glossary.md --max-seconds 30 --output data/transcripts/<AUDIO_ID>.test30s.json`

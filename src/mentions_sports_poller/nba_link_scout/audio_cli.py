@@ -48,6 +48,7 @@ def main() -> None:
         return
 
     if args.command == "transcribe":
+        progress_reporter = TranscriptionProgressReporter()
         try:
             result = transcribe_audio_from_manifest(
                 manifest_file=args.manifest,
@@ -59,6 +60,9 @@ def main() -> None:
                 timeout_seconds=args.timeout_seconds,
                 output_path=args.output,
                 dry_run=args.dry_run,
+                max_seconds=args.max_seconds,
+                ffmpeg_bin=args.ffmpeg_bin,
+                progress_callback=progress_reporter.handle_event,
             )
         except (OSError, ValueError, TranscriptionError) as exc:
             raise SystemExit(f"transcription failed: {exc}") from exc
@@ -116,6 +120,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     transcribe_parser.add_argument("--timeout-seconds", type=float, default=900.0, help="OpenAI request timeout in seconds")
     transcribe_parser.add_argument("--output", help="Write transcription JSON output to this path")
+    transcribe_parser.add_argument(
+        "--max-seconds",
+        type=float,
+        help="Only transcribe the first N seconds of audio (quick test mode, uses ffmpeg)",
+    )
+    transcribe_parser.add_argument("--ffmpeg-bin", default="ffmpeg", help="ffmpeg binary name/path for clipping")
     transcribe_parser.add_argument("--dry-run", action="store_true", help="Build prompt/output plan without API call")
 
     return parser
@@ -233,6 +243,28 @@ class DownloadProgressReporter:
             f" | remaining files after this: {remaining_files}{duration_text}",
             flush=True,
         )
+
+
+class TranscriptionProgressReporter:
+    def __init__(self) -> None:
+        self._last_percent = -1
+
+    def handle_event(self, event: dict) -> None:
+        if str(event.get("event", "")) != "transcription_progress":
+            return
+        percent_raw = event.get("percent")
+        stage = str(event.get("stage", ""))
+        detail = str(event.get("detail", "")).strip()
+        if not isinstance(percent_raw, int):
+            return
+        percent = max(0, min(100, percent_raw))
+        if percent < self._last_percent:
+            return
+        if percent == self._last_percent and not detail:
+            return
+        self._last_percent = percent
+        suffix = f" | {detail}" if detail else ""
+        print(f"[transcribe] {percent}% {stage}{suffix}", flush=True)
 
 
 def _format_duration(value: float) -> str:

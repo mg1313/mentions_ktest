@@ -159,3 +159,13 @@
   - Join audio rows to game packets using normalized (`date`, `away`, `home`) keys and fail fast when no exact match exists.
 - How to detect earlier:
   - Add unit tests that verify successful match and explicit failure on non-matching game metadata.
+
+## 2026-02-11 - Prefer repo-local temp paths for clip artifacts in this sandbox
+- What happened:
+  - Tests that used OS temp directories for short-lived clip files failed with permission/cleanup errors in this environment.
+- Root cause:
+  - Sandbox policies can restrict temp-dir traversal/cleanup semantics outside repo-controlled paths.
+- Preventative rule:
+  - For transient media artifacts, create temp files under repo-local directories and explicitly clean up files after use.
+- How to detect earlier:
+  - Add at least one test that exercises temp-file cleanup in the same environment where pytest runs.
