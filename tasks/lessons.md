@@ -119,3 +119,13 @@
   - Keep fetch strategy configurable (`http` vs browser mode) and scope browser mode to target pages only to avoid over-broad complexity.
 - How to detect earlier:
   - Run a one-page A/B probe (`httpx` vs Playwright) before deep debugging URL/parser logic when repeated 403s appear.
+
+## 2026-02-10 - Multi-feed outputs need provenance-aware pairing, not flat URL rows
+- What happened:
+  - Games frequently produced multiple OK.ru links; flat per-link rows made it unclear which two belonged to primary/backup from the same guide page.
+- Root cause:
+  - Output layer lacked provenance-aware grouping by extraction source page.
+- Preventative rule:
+  - Persist link provenance (`video_url` + `extracted_from_url`) and build per-game paired outputs that prefer same-source feed links.
+- How to detect earlier:
+  - Add a unit test with 3+ links from mixed source pages and assert pair selection from the preferred intermediary domain.

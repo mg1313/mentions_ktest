@@ -238,6 +238,7 @@
 - Added fallback adapter circuit-breaker to disable Selenium extractor after first fatal WebDriver-style failure, reducing repeated stacktraces across games.
 - Hardened `extract_video_url_selenium.py` with modern headless options and fail-open behavior (`[]` on WebDriverException) to avoid noisy hard failures.
 - Added optional Playwright target-page fetch mode (`http.target_page_fetch_mode`) while keeping schedule fetch on `httpx`.
+- Added paired daily output workflow: one row per game with `main_video_url` + `backup_video_url`, preferring links extracted from the same intermediary guide page.
 
 ## Review
 - What changed:
@@ -265,5 +266,6 @@
   - Re-ran after anti-403 hardening: `python -m pytest -q` -> 23 passed.
   - Re-ran after Selenium circuit-breaker: `python -m pytest -q` -> 24 passed.
   - Re-ran after Playwright integration: `python -m pytest -q` -> 26 passed.
+  - Re-ran after paired-link workflow update: `python -m pytest -q` -> 27 passed.
 - How to run:
   - `PYTHONPATH=src python -m mentions_sports_poller.nba_link_scout run --date 2026-02-10 --config configs/nba_link_scout.basketball_video.template.json --daily-video-output data/nba_okru_daily.json`

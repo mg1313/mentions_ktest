@@ -129,6 +129,7 @@ def run_link_scout(
                 )
 
     result_payload["daily_video_rows"] = _build_daily_video_rows(result_payload["results"])
+    result_payload["daily_video_pairs"] = _build_daily_video_pairs(result_payload["results"])
     return result_payload
 
 
@@ -150,7 +151,7 @@ def _process_candidate(
         logger.error(message)
         if not fallback_adapters:
             return ExtractionResult(found_links=(), method_used="html", debug={"error": message})
-        fallback_links, fallback_debug = _run_fallback_extractors(
+        fallback_links, fallback_debug, fallback_link_sources = _run_fallback_extractors(
             extraction_targets=[candidate.page_url],
             fallback_adapters=fallback_adapters,
             final_filter_rule=final_filter_rule,
@@ -159,7 +160,11 @@ def _process_candidate(
             fallback_failure_counts=fallback_failure_counts,
             logger=logger,
         )
-        debug = {"error": message, "fallback_attempts": fallback_debug}
+        debug = {
+            "error": message,
+            "fallback_attempts": fallback_debug,
+            "fallback_link_sources": fallback_link_sources,
+        }
         return ExtractionResult(found_links=fallback_links, method_used="fallback", debug=debug)
 
     html_links = extract_links_from_html(
@@ -190,7 +195,13 @@ def _process_candidate(
             return ExtractionResult(
                 found_links=tuple(direct_video_links),
                 method_used="html",
-                debug=debug,
+                debug={
+                    **debug,
+                    "direct_link_sources": [
+                        {"video_url": link, "extracted_from_url": response.url}
+                        for link in direct_video_links
+                    ],
+                },
             )
 
     if not fallback_adapters:
@@ -198,7 +209,7 @@ def _process_candidate(
 
     # Try extractors on the source page and on intermediary links found in the source HTML.
     extraction_targets = _unique_preserve_order([candidate.page_url, *html_links])
-    unique_filtered, fallback_attempts = _run_fallback_extractors(
+    unique_filtered, fallback_attempts, fallback_link_sources = _run_fallback_extractors(
         extraction_targets=extraction_targets,
         fallback_adapters=fallback_adapters,
         final_filter_rule=final_filter_rule,
@@ -208,6 +219,7 @@ def _process_candidate(
         logger=logger,
     )
     debug["fallback_attempts"] = fallback_attempts
+    debug["fallback_link_sources"] = fallback_link_sources
     debug["fallback_filtered_count"] = len(unique_filtered)
     return ExtractionResult(
         found_links=unique_filtered,
@@ -225,8 +237,9 @@ def _run_fallback_extractors(
     disabled_fallback_keys: set[str] | None,
     fallback_failure_counts: dict[str, int] | None,
     logger: logging.Logger,
-) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
+) -> tuple[tuple[str, ...], list[dict[str, Any]], list[dict[str, str]]]:
     collected: list[str] = []
+    collected_sources: list[dict[str, str]] = []
     fallback_attempts: list[dict[str, Any]] = []
     for target_url in extraction_targets:
         for adapter in fallback_adapters:
@@ -252,7 +265,12 @@ def _run_fallback_extractors(
                 filtered = apply_link_filters(normalized, base_url=target_url, rule=final_filter_rule)
                 attempt_debug["raw_count"] = len(raw_fallback_links)
                 attempt_debug["filtered_count"] = len(filtered)
+                attempt_debug["filtered_urls"] = filtered
                 collected.extend(filtered)
+                for link in filtered:
+                    collected_sources.append(
+                        {"video_url": link, "extracted_from_url": target_url}
+                    )
             except Exception as exc:
                 fail_count = 1
                 if fallback_failure_counts is not None:
@@ -285,7 +303,15 @@ def _run_fallback_extractors(
                 logger.error(message)
             fallback_attempts.append(attempt_debug)
     unique_filtered = tuple(_unique_preserve_order(collected))
-    return unique_filtered, fallback_attempts
+    unique_sources: list[dict[str, str]] = []
+    seen_source_keys: set[tuple[str, str]] = set()
+    for item in collected_sources:
+        key = (item["video_url"], item["extracted_from_url"])
+        if key in seen_source_keys:
+            continue
+        seen_source_keys.add(key)
+        unique_sources.append(item)
+    return unique_filtered, fallback_attempts, unique_sources
 
 
 def _should_disable_fallback_adapter(
@@ -339,6 +365,87 @@ def _build_daily_video_rows(results: list[dict[str, Any]]) -> list[dict[str, str
             )
     rows.sort(key=lambda row: (row["date"], row["away"], row["home"], row["video_url"]))
     return rows
+
+
+def _build_daily_video_pairs(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in results:
+        game = item.get("game", {})
+        date_only = str(game.get("date", ""))[:10]
+        home = str(game.get("home", ""))
+        away = str(game.get("away", ""))
+        key = (date_only, home, away)
+        grouped.setdefault(key, []).append(item)
+
+    pairs: list[dict[str, Any]] = []
+    for (date_only, home, away), items in grouped.items():
+        links: list[str] = []
+        link_source_map: dict[str, str] = {}
+        source_buckets: dict[str, list[str]] = {}
+
+        for item in items:
+            extraction = item.get("extraction", {})
+            debug = extraction.get("debug", {}) if isinstance(extraction, dict) else {}
+            page_url = str(item.get("page_url", ""))
+            for link in extraction.get("found_links", []):
+                if not isinstance(link, str):
+                    continue
+                if link not in links:
+                    links.append(link)
+            fallback_sources = debug.get("fallback_link_sources", [])
+            direct_sources = debug.get("direct_link_sources", [])
+            for source_item in [*fallback_sources, *direct_sources]:
+                if not isinstance(source_item, dict):
+                    continue
+                video_url = source_item.get("video_url")
+                extracted_from_url = source_item.get("extracted_from_url")
+                if not isinstance(video_url, str) or not isinstance(extracted_from_url, str):
+                    continue
+                link_source_map.setdefault(video_url, extracted_from_url)
+            for link in extraction.get("found_links", []):
+                if not isinstance(link, str):
+                    continue
+                extracted_from = link_source_map.get(link, page_url)
+                source_buckets.setdefault(extracted_from, [])
+                if link not in source_buckets[extracted_from]:
+                    source_buckets[extracted_from].append(link)
+
+        selected_source = ""
+        selected_links: list[str] = []
+        if source_buckets:
+            source_candidates = sorted(
+                source_buckets.items(),
+                key=lambda kv: (
+                    0 if "guidedesgemmes.com" in kv[0] else 1,
+                    -len(kv[1]),
+                    kv[0],
+                ),
+            )
+            for source, bucket_links in source_candidates:
+                if len(bucket_links) >= 2:
+                    selected_source = source
+                    selected_links = bucket_links
+                    break
+            if not selected_links:
+                selected_source, selected_links = source_candidates[0]
+
+        main_video_url = selected_links[0] if len(selected_links) >= 1 else (links[0] if links else "")
+        backup_video_url = selected_links[1] if len(selected_links) >= 2 else (links[1] if len(links) >= 2 else "")
+
+        pairs.append(
+            {
+                "date": date_only,
+                "home": home,
+                "away": away,
+                "source_feed_page": selected_source,
+                "main_video_url": main_video_url,
+                "backup_video_url": backup_video_url,
+                "all_video_urls": links,
+            }
+        )
+
+    pairs.sort(key=lambda row: (row["date"], row["away"], row["home"]))
+    return pairs
 
 
 def _unique_preserve_order(values: list[str]) -> list[str]:

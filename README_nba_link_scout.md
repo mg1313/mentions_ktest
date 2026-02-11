@@ -33,7 +33,7 @@ Common flags:
 - `--table` also prints a human-readable table
 - `--timeout 20` overrides HTTP timeout seconds
 - `--max-retries 4` overrides retry count
-- `--daily-video-output data/nba_okru_daily.json` updates a persistent JSON file with `date`, `home`, `away`, `video_url`
+- `--daily-video-output data/nba_okru_daily.json` updates a persistent JSON file with `date`, `home`, `away`, `main_video_url`, `backup_video_url`
 - `-v` enables debug logs
 
 ## Config
@@ -64,7 +64,10 @@ Key fields:
   - each item has `module_path`, `function_name`, `function_kwargs`
   - extractors are tried on source pages and intermediary matched links (for example `guidedesgemmes.com`)
 - `daily_video_output_path` (optional)
-  - JSON file that is upserted each run with `date`, `home`, `away`, `video_url`
+  - JSON file that is upserted each run with one row per game containing:
+    - `date`, `home`, `away`
+    - `main_video_url`, `backup_video_url`
+    - `source_feed_page` (preferred intermediary page where both links were found)
 - `http`
   - `user_agent`, `request_headers`, and `follow_redirects` can be set for stricter sites
   - `target_page_fetch_mode`: `http` (default) or `playwright`
@@ -80,6 +83,7 @@ Default output is JSON with:
 - selected games
 - extraction results per game + target URL
 - `daily_video_rows` (flattened rows for `date/home/away/video_url`)
+- `daily_video_pairs` (one per game, main + backup links)
 - errors/debug metadata
 
 Use `--table` to print a concise table view alongside JSON.

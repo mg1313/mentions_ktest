@@ -51,10 +51,10 @@ def _format_row(row: tuple[str, ...], widths: list[int]) -> str:
     return " | ".join(value.ljust(widths[idx]) for idx, value in enumerate(row))
 
 
-def update_daily_video_output_file(path: str | Path, rows: list[dict[str, str]]) -> dict[str, int]:
+def update_daily_video_output_file(path: str | Path, rows: list[dict[str, Any]]) -> dict[str, int]:
     output_path = Path(path)
     existing = _load_existing_rows(output_path)
-    merged: dict[tuple[str, str, str, str], dict[str, str]] = {}
+    merged: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in existing:
         key = _daily_row_key(row)
         if key is None:
@@ -67,30 +67,33 @@ def update_daily_video_output_file(path: str | Path, rows: list[dict[str, str]])
         merged[key] = row
 
     merged_rows = list(merged.values())
-    merged_rows.sort(key=lambda row: (row["date"], row["away"], row["home"], row["video_url"]))
+    merged_rows.sort(key=lambda row: (str(row.get("date", "")), str(row.get("away", "")), str(row.get("home", ""))))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(merged_rows, indent=2, sort_keys=True), encoding="utf-8")
     return {"existing_rows": len(existing), "input_rows": len(rows), "written_rows": len(merged_rows)}
 
 
-def _load_existing_rows(path: Path) -> list[dict[str, str]]:
+def _load_existing_rows(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, list):
         return []
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for item in payload:
         if isinstance(item, dict):
-            rows.append({str(key): str(value) for key, value in item.items()})
+            rows.append(item)
     return rows
 
 
-def _daily_row_key(row: dict[str, str]) -> tuple[str, str, str, str] | None:
+def _daily_row_key(row: dict[str, Any]) -> tuple[str, str, str] | None:
     date_value = row.get("date")
     home = row.get("home")
     away = row.get("away")
-    video_url = row.get("video_url")
-    if not date_value or not home or not away or not video_url:
+    if not isinstance(date_value, str) or not isinstance(home, str) or not isinstance(away, str):
         return None
-    return date_value, home, away, video_url
+    main_video_url = row.get("main_video_url")
+    video_url = row.get("video_url")
+    if main_video_url is None and video_url is None:
+        return None
+    return date_value, home, away

@@ -34,9 +34,12 @@ def main() -> None:
     payload = run_link_scout(config=config, options=options, logger=logger)
     daily_output_path = options.daily_video_output_path_override or config.daily_video_output_path
     if daily_output_path and not options.dry_run:
+        daily_rows = payload.get("daily_video_pairs")
+        if not isinstance(daily_rows, list):
+            daily_rows = payload.get("daily_video_rows", [])
         write_stats = update_daily_video_output_file(
             daily_output_path,
-            payload.get("daily_video_rows", []),
+            daily_rows,
         )
         logger.info("updated daily video output", extra={"path": daily_output_path, **write_stats})
     json_output = to_json_output(payload)
@@ -66,7 +69,7 @@ def _build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument("--max-retries", type=int, help="Override HTTP max retries")
         command_parser.add_argument(
             "--daily-video-output",
-            help="Path to JSON file updated with date/home/away/video_url rows",
+            help="Path to JSON file updated with date/home/away/main_video_url/backup_video_url rows",
         )
         command_parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity")
 
