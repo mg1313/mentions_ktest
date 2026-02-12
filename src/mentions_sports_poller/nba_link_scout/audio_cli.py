@@ -7,6 +7,14 @@ import time
 from pathlib import Path
 
 from .audio_download import download_audio_from_manifest, load_manifest_rows, sync_audio_manifest
+from .transcript_dataset import (
+    TranscriptDatasetError,
+    build_transcript_feature_dataset,
+    default_output_csv_path,
+    default_output_json_path,
+    load_term_definitions,
+    write_dataset_outputs,
+)
 from .transcribe import TranscriptionError, transcribe_audio_from_manifest
 
 
@@ -50,10 +58,16 @@ def main() -> None:
     if args.command == "transcribe":
         progress_reporter = TranscriptionProgressReporter()
         try:
+            resolved_game_info_file = _resolve_game_info_file_for_audio_id(
+                manifest_file=args.manifest,
+                audio_id=args.audio_id,
+                game_info_file_override=args.game_info_file,
+                game_info_dir=args.game_info_dir,
+            )
             result = transcribe_audio_from_manifest(
                 manifest_file=args.manifest,
                 audio_id=args.audio_id,
-                game_info_file=args.game_info_file,
+                game_info_file=resolved_game_info_file,
                 glossary_file=args.glossary_file,
                 model=args.model,
                 api_key_env=args.api_key_env,
@@ -62,11 +76,49 @@ def main() -> None:
                 dry_run=args.dry_run,
                 max_seconds=args.max_seconds,
                 ffmpeg_bin=args.ffmpeg_bin,
+                ffprobe_bin=args.ffprobe_bin,
+                chunk_seconds=args.chunk_seconds,
+                chunk_overlap_seconds=args.chunk_overlap_seconds,
                 progress_callback=progress_reporter.handle_event,
             )
         except (OSError, ValueError, TranscriptionError) as exc:
             raise SystemExit(f"transcription failed: {exc}") from exc
         print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    if args.command == "build-dataset":
+        try:
+            terms = load_term_definitions(
+                terms_file=args.terms_file,
+                inline_terms=args.term,
+            )
+            dataset = build_transcript_feature_dataset(
+                transcripts_dir=args.transcripts_dir,
+                manifest_file=args.manifest,
+                game_info_dir=args.game_info_dir,
+                terms=terms,
+                include_test_transcripts=args.include_test_transcripts,
+                national_network_markers=tuple(args.national_network or []),
+                logger=logger,
+            )
+            json_output_path = args.output_json or default_output_json_path()
+            if args.skip_csv:
+                csv_output_path = None
+            else:
+                csv_output_path = args.output_csv or default_output_csv_path()
+            outputs = write_dataset_outputs(
+                dataset=dataset,
+                output_json=json_output_path,
+                output_csv=csv_output_path,
+            )
+        except (OSError, ValueError, TranscriptDatasetError) as exc:
+            raise SystemExit(f"dataset build failed: {exc}") from exc
+        response = {
+            "summary": dataset.get("summary", {}),
+            "outputs": outputs,
+            "error_count": len(dataset.get("errors", [])) if isinstance(dataset.get("errors", []), list) else 0,
+        }
+        print(json.dumps(response, indent=2, sort_keys=True))
         return
 
     raise SystemExit(f"unknown command: {args.command}")
@@ -104,8 +156,15 @@ def _build_parser() -> argparse.ArgumentParser:
     transcribe_parser.add_argument("--audio-id", required=True, help="audio_id from the manifest")
     transcribe_parser.add_argument(
         "--game-info-file",
-        required=True,
-        help="Path to game info packet file produced by nba-link-scout game-info",
+        help=(
+            "Optional explicit path to game info packet JSON; "
+            "if omitted, auto-resolves to <game-info-dir>/nba_game_info_<date>.json from manifest date"
+        ),
+    )
+    transcribe_parser.add_argument(
+        "--game-info-dir",
+        default="data",
+        help="Directory used for auto-resolved game info files (default: data)",
     )
     transcribe_parser.add_argument(
         "--glossary-file",
@@ -126,7 +185,68 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Only transcribe the first N seconds of audio (quick test mode, uses ffmpeg)",
     )
     transcribe_parser.add_argument("--ffmpeg-bin", default="ffmpeg", help="ffmpeg binary name/path for clipping")
+    transcribe_parser.add_argument("--ffprobe-bin", default="ffprobe", help="ffprobe binary name/path for chunk planning")
+    transcribe_parser.add_argument(
+        "--chunk-seconds",
+        type=float,
+        default=900.0,
+        help="Chunk size in seconds for long audio (0 disables chunking)",
+    )
+    transcribe_parser.add_argument(
+        "--chunk-overlap-seconds",
+        type=float,
+        default=0.0,
+        help="Overlap between chunks in seconds (must be < chunk-seconds)",
+    )
     transcribe_parser.add_argument("--dry-run", action="store_true", help="Build prompt/output plan without API call")
+
+    dataset_parser = subparsers.add_parser(
+        "build-dataset",
+        help="Build a modeling-ready transcript dataset with term counts and game context features",
+    )
+    dataset_parser.add_argument(
+        "--transcripts-dir",
+        default="data/transcripts",
+        help="Directory containing transcript JSON outputs",
+    )
+    dataset_parser.add_argument("--manifest", default="data/nba_audio_manifest.json", help="Path to audio manifest JSON")
+    dataset_parser.add_argument(
+        "--game-info-dir",
+        default="data",
+        help="Directory containing nba_game_info_YYYY-MM-DD.json files",
+    )
+    dataset_parser.add_argument(
+        "--terms-file",
+        help="Path to terms definition file (.json list or newline-separated text)",
+    )
+    dataset_parser.add_argument(
+        "--term",
+        action="append",
+        help="Inline term (repeatable); combined with --terms-file if provided",
+    )
+    dataset_parser.add_argument(
+        "--include-test-transcripts",
+        action="store_true",
+        help="Include transcripts with .test in filename (default skips them)",
+    )
+    dataset_parser.add_argument(
+        "--national-network",
+        action="append",
+        help="Network marker treated as national TV when present in broadcast network (repeatable)",
+    )
+    dataset_parser.add_argument(
+        "--output-json",
+        help="Output JSON path (default: data/modeling/nba_transcript_term_dataset.json)",
+    )
+    dataset_parser.add_argument(
+        "--output-csv",
+        help="Output CSV path (default: data/modeling/nba_transcript_term_audio_rows.csv)",
+    )
+    dataset_parser.add_argument(
+        "--skip-csv",
+        action="store_true",
+        help="Do not emit CSV output",
+    )
 
     return parser
 
@@ -275,6 +395,36 @@ def _format_duration(value: float) -> str:
     if hours > 0:
         return f"{hours}h{minutes:02d}m{seconds:02d}s"
     return f"{minutes}m{seconds:02d}s"
+
+
+def _resolve_game_info_file_for_audio_id(
+    *,
+    manifest_file: str | Path,
+    audio_id: str,
+    game_info_file_override: str | None,
+    game_info_dir: str | Path,
+) -> str:
+    if game_info_file_override:
+        return str(game_info_file_override)
+    audio_row = _find_audio_row(manifest_file=manifest_file, audio_id=audio_id)
+    date_value = str(audio_row.get("date", "")).strip()
+    if not date_value:
+        raise TranscriptionError(f"audio_id {audio_id} has no date field in manifest")
+    candidate = Path(game_info_dir) / f"nba_game_info_{date_value}.json"
+    if not candidate.exists():
+        raise TranscriptionError(
+            f"auto-resolved game info file not found for audio_id {audio_id}: {candidate}. "
+            "Pass --game-info-file explicitly or run nba-link-scout game-info for that date."
+        )
+    return str(candidate)
+
+
+def _find_audio_row(*, manifest_file: str | Path, audio_id: str) -> dict:
+    rows = load_manifest_rows(manifest_file=manifest_file)
+    for row in rows:
+        if str(row.get("audio_id", "")) == audio_id:
+            return row
+    raise TranscriptionError(f"audio_id not found in manifest: {audio_id}")
 
 
 if __name__ == "__main__":

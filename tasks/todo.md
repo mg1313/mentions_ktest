@@ -529,3 +529,216 @@
   - `python -m pytest -q -p no:tmpdir -p no:cacheprovider`
 - How to run:
   - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_YYYY-MM-DD.json --glossary-file basketball_glossary.md --max-seconds 30 --output data/transcripts/<AUDIO_ID>.test30s.json`
+
+---
+
+# Task: Deterministic Name/Nickname Correction + Chunked Transcription
+
+## Scope Guard
+- [x] Apply deterministic correction only to player names, commentator names, and team nicknames.
+- [x] Do not include city names in correction entities.
+- [x] Add chunking suitable for long files with pragmatic 80/20 implementation.
+
+## Plan
+- [x] Build correction entity set from game packet + audio metadata:
+  - players from rosters
+  - commentators from commentary packet
+  - team nicknames only (no city names)
+- [x] Add deterministic correction pass:
+  - fuzzy + canonical casing normalization
+  - replacement audit list in output JSON
+- [x] Add chunking pipeline:
+  - duration probe with ffprobe
+  - fixed-size chunk plan with optional overlap
+  - sequential chunk transcription and merge
+- [x] Wire chunk options into CLI.
+- [x] Add tests for correction scope and chunking behavior.
+
+## Acceptance Criteria
+- [x] Misspelled player/commentator/team nickname tokens can be corrected deterministically.
+- [x] City names are not part of correction entity catalog.
+- [x] Long audio can be transcribed in chunks with configurable chunk size/overlap.
+- [x] Tests pass.
+
+## Progress Notes
+- Reworked transcription engine to support chunk planning (`chunk_seconds`, `chunk_overlap_seconds`) and per-chunk uploads.
+- Added deterministic entity correction targeting:
+  - player full names
+  - commentator names
+  - NBA team nicknames (city excluded by design)
+- Added output fields: `transcript_text_raw`, `transcript_text`, `entity_corrections`, `correction_entities`, and `chunks`.
+- Added CLI flags:
+  - `--chunk-seconds`
+  - `--chunk-overlap-seconds`
+  - `--ffprobe-bin`
+- Extended tests for:
+  - deterministic corrections without city correction
+  - chunked multi-request transcription path
+  - progress event expectations.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/nba_link_scout/transcribe.py`.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py`.
+  - Updated `tests/test_nba_transcribe.py`.
+  - Updated `RUNBOOK.md`.
+- Why:
+  - Needed robust handling for long (2-hour) audio and deterministic cleanup of common proper-noun misses.
+- How tested:
+  - `python -m pytest -q tests/test_nba_transcribe.py -p no:tmpdir -p no:cacheprovider` -> `6 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `38 passed`.
+- How to run:
+  - Chunked run:
+    - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_YYYY-MM-DD.json --glossary-file basketball_glossary.md --chunk-seconds 900 --chunk-overlap-seconds 0 --output data/transcripts/<AUDIO_ID>.json`
+
+---
+
+# Task: Transcribe CLI Defaults (Auto Game Info + Optional Output)
+
+## Scope Guard
+- [x] Keep existing explicit flags supported for backwards compatibility.
+- [x] Make `--game-info-file` optional by deriving date from audio manifest row.
+- [x] Keep chunk defaults at 900/0 and keep those flags optional in CLI calls.
+
+## Plan
+- [x] Add manifest-driven game-info path resolution for transcribe command.
+- [x] Add default output naming rules:
+  - `<audio_id>.json` under `data/transcripts` when full file.
+  - `<audio_id>.test#s.json` when `--max-seconds` is set and `--output` omitted.
+- [x] Add tests for auto path resolution + output default behavior.
+- [x] Update `RUNBOOK.md` command examples to omit manual game-info/output where appropriate.
+
+## Acceptance Criteria
+- [x] User can run transcribe without manually passing `--game-info-file` if standard file naming exists.
+- [x] User can omit `--output` and get deterministic default file naming.
+- [x] Tests pass.
+
+## Progress Notes
+- Made `--game-info-file` optional in `audio_cli.py` and added manifest-driven resolution:
+  - finds audio row by `audio_id`
+  - reads `date`
+  - auto-resolves to `<game-info-dir>/nba_game_info_<date>.json` (default `data/`)
+- Added optional `--game-info-dir` to support custom auto-resolution directory while preserving default behavior.
+- Added default transcript output naming in `transcribe.py`:
+  - normal: `data/transcripts/<audio_id>.json`
+  - test clip: `data/transcripts/<audio_id>.test#s.json`
+- Updated runbook examples to show shorter CLI calls without manual game-info/output flags for the common path.
+- Added tests:
+  - `tests/test_nba_audio_cli_transcribe_defaults.py`
+  - extended `tests/test_nba_transcribe.py` for default output suffix with `--max-seconds`.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py` for auto game-info resolution and parser changes.
+  - Updated `src/mentions_sports_poller/nba_link_scout/transcribe.py` for default output naming with `.test#s` suffix when `max_seconds` is set.
+  - Added `tests/test_nba_audio_cli_transcribe_defaults.py`.
+  - Updated `tests/test_nba_transcribe.py`.
+  - Updated `RUNBOOK.md`.
+- Why:
+  - Remove manual lookup friction in the transcribe CLI and make defaults match daily usage patterns.
+- How tested:
+  - `python -m pytest -q tests/test_nba_audio_cli_transcribe_defaults.py tests/test_nba_transcribe.py -p no:tmpdir -p no:cacheprovider` -> `9 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `41 passed`.
+- How to run:
+  - `python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id <AUDIO_ID> --manifest data/nba_audio_manifest.json --glossary-file basketball_glossary.md`
+
+---
+
+# Task: Transcript Feature Dataset Builder (Utterance Modeling Prep)
+
+## Scope Guard
+- [x] Process final corrected transcript outputs into modeling-ready rows.
+- [x] Keep all processing deterministic and local (no network).
+- [x] Include factors needed for downstream modeling:
+  - per-term utterance counts
+  - national-vs-local indicator
+  - commentator presence
+  - player presence
+
+## Plan
+- [x] Add `transcript_dataset.py` module:
+  - load transcript JSON files and manifest rows
+  - load per-date game info packets
+  - count configured terms in corrected transcript text
+  - derive metadata/features for modeling
+- [x] Add CLI command to `audio_cli.py`:
+  - `nba-audio-dl build-dataset --terms-file ...`
+  - allow transcript/manifest/game-info dirs and output path overrides
+- [x] Output both:
+  - machine-readable JSON payload (`audio_rows` + `game_rows`)
+  - flat CSV (`audio_rows`) for direct model ingestion
+- [x] Add tests (no network):
+  - term counting behavior
+  - metadata join from transcript -> manifest -> game packet
+  - commentator/player/national feature columns
+- [x] Update `RUNBOOK.md` with commands and expected outputs.
+
+## Data Flow
+- Inputs:
+  - `data/transcripts/*.json` (or override dir)
+  - `data/nba_audio_manifest.json` (or override path)
+  - `data/nba_game_info_YYYY-MM-DD.json` packets (or override dir)
+  - user term definitions (`--terms-file`)
+- Transforms:
+  - transcript load -> corrected text selection -> term counting -> context joins -> feature vector expansion
+- Outputs:
+  - JSON dataset artifact (full rich structure)
+  - CSV dataset artifact (flat per-audio rows)
+
+## Error Handling / Safety
+- [x] Fail-open per transcript file:
+  - log and collect row-level errors, continue remaining files.
+- [x] Fail-fast for invalid term config schema.
+- [x] Missing manifest/game-info context should not crash the full run:
+  - preserve row with warnings and empty/default features.
+
+## Storage Schema Changes
+- [x] No database schema changes (file outputs only).
+
+## Minimal Test Plan
+- [x] Unit test literal phrase counting and case-insensitive matching.
+- [x] Unit test dataset row contains expected term count columns.
+- [x] Unit test commentator/player presence columns and national flag derivation.
+- [x] Unit test game-level aggregation output.
+
+## Acceptance Criteria
+- [x] One command builds modeling-ready rows from existing transcript outputs.
+- [x] Output contains per-term counts and covariates for feed/commentator/player context.
+- [x] Tests pass locally with no-network execution.
+
+## Progress Notes
+- Added `src/mentions_sports_poller/nba_link_scout/transcript_dataset.py` with:
+  - terms loader (`--terms-file` JSON/text + repeatable `--term`)
+  - corrected transcript text selection logic
+  - per-term counting (literal or regex rules)
+  - manifest + game-info context joins
+  - TV scope features (`is_national_tv`, `is_local_tv`, `tv_scope_label`), commentator/player feature expansion
+  - per-audio rows + per-game aggregated rows
+  - JSON + CSV writers
+- Added new CLI command:
+  - `python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset ...`
+  - supports transcript/manifest/game-info path overrides and output overrides.
+- Added tests:
+  - `tests/test_nba_transcript_dataset.py`
+  - covers feature extraction, aggregation, CSV/JSON output, and fail-open on malformed transcript file.
+- Updated `RUNBOOK.md` with section `4.8 Build Modeling Dataset from Final Transcripts`.
+- Added starter terms config: `configs/transcript_terms.example.json`.
+
+## Review
+- What changed:
+  - Added `src/mentions_sports_poller/nba_link_scout/transcript_dataset.py`.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py` with `build-dataset` subcommand.
+  - Added `tests/test_nba_transcript_dataset.py`.
+  - Added `configs/transcript_terms.example.json`.
+  - Updated `RUNBOOK.md`.
+- Why:
+  - Needed deterministic preprocessing from corrected transcripts into modeling-ready features for term-count outcome modeling and covariates (broadcast/commentator/player context).
+- How tested:
+  - `python -m pytest -q tests/test_nba_transcript_dataset.py -p no:tmpdir -p no:cacheprovider` -> `2 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `43 passed`.
+  - CLI help smoke:
+    - `$env:PYTHONPATH='src'; python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --help`
+  - CLI build smoke:
+    - `$env:PYTHONPATH='src'; python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --terms-file configs/transcript_terms.example.json --output-json tests/fixtures/_dataset_smoke.json --skip-csv`
+- How to run:
+  - `python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json --game-info-dir data --terms-file configs/transcript_terms.example.json`

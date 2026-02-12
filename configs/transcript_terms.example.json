@@ -1,0 +1,11 @@
+[
+  "trade",
+  "foul",
+  "three-pointer",
+  "injury",
+  {
+    "name": "ant-man",
+    "pattern": "ant[-\\s]?man",
+    "regex": true
+  }
+]

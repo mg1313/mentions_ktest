@@ -309,28 +309,73 @@ Generate game info packet file for the date if needed:
 python -m mentions_sports_poller.nba_link_scout game-info --date 2026-02-09 --config configs/nba_link_scout.basketball_video.template.json --output data/nba_game_info_2026-02-09.json
 ```
 
-Transcribe one file by `audio_id` (uses game packet + `basketball_glossary.md` in prompt):
+Transcribe one file by `audio_id` (auto-resolves game info file by date from manifest):
 
 ```powershell
 $env:OPENAI_API_KEY = "<your-key>"
-python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --output data/transcripts/9ee9bf1cae01.json
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --glossary-file basketball_glossary.md
+```
+
+Long-file chunking (recommended for 2-hour audio):
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --glossary-file basketball_glossary.md --chunk-seconds 900 --chunk-overlap-seconds 0
 ```
 
 Quick test on first 30 seconds only:
 
 ```powershell
-python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --max-seconds 30 --output data/transcripts/9ee9bf1cae01.test30s.json
+python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --glossary-file basketball_glossary.md --max-seconds 30
 ```
 
 Progress:
 
 - Transcription CLI prints stage-based `%` updates (start -> context -> optional clipping -> API -> complete).
+- Output includes both:
+  - `transcript_text_raw` (pre-correction merge)
+  - `transcript_text` (deterministic corrected text)
+- Default output path behavior when `--output` is omitted:
+  - full run: `data/transcripts/<audio_id>.json`
+  - test clip (`--max-seconds N`): `data/transcripts/<audio_id>.testNs.json`
+- Deterministic correction scope:
+  - includes player names, commentator names, and team nicknames
+  - excludes city names
 
 Dry-run (no API call, validates matching + prompt build):
 
 ```powershell
 python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 9ee9bf1cae01 --manifest data/nba_audio_manifest.json --game-info-file data/nba_game_info_2026-02-09.json --glossary-file basketball_glossary.md --dry-run
 ```
+
+### 4.8 Build Modeling Dataset from Final Transcripts
+
+Goal:
+- Convert corrected transcripts into model-ready rows with:
+  - per-term utterance counts
+  - national-vs-local indicator
+  - commentator presence columns
+  - player presence columns
+
+Create/edit a terms file (example):
+- `configs/transcript_terms.example.json`
+
+Run:
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json --game-info-dir data --terms-file configs/transcript_terms.example.json
+```
+
+Optional flags:
+- `--term "<phrase>"` (repeatable; can be combined with `--terms-file`)
+- `--include-test-transcripts` (include files like `*.test30s.json`)
+- `--national-network ESPN --national-network TNT` (mark matching networks as national)
+- `--output-json data/modeling/custom_dataset.json`
+- `--output-csv data/modeling/custom_audio_rows.csv`
+- `--skip-csv`
+
+Default outputs:
+- JSON: `data/modeling/nba_transcript_term_dataset.json`
+- CSV: `data/modeling/nba_transcript_term_audio_rows.csv`
 
 ---
 

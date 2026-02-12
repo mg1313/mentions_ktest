@@ -169,3 +169,33 @@
   - For transient media artifacts, create temp files under repo-local directories and explicitly clean up files after use.
 - How to detect earlier:
   - Add at least one test that exercises temp-file cleanup in the same environment where pytest runs.
+
+## 2026-02-11 - Chunking defaults must account for ffprobe availability in tests
+- What happened:
+  - Enabling chunk planning by default triggered ffprobe subprocess calls, which broke tests in environments without ffprobe on PATH.
+- Root cause:
+  - Duration probing was coupled to default transcription path rather than test-injected duration metadata.
+- Preventative rule:
+  - Keep duration probing injectable and set `chunk_seconds=0` in unit tests that are not explicitly validating chunking.
+- How to detect earlier:
+  - Add a smoke test that runs transcription flow in a no-ffprobe environment with default flags.
+
+## 2026-02-11 - Prefer manifest-derived defaults for cross-workflow file paths
+- What happened:
+  - Manual `--game-info-file` path lookups were a recurring friction point and source of user mistakes.
+- Root cause:
+  - CLI required users to bridge two workflow outputs (audio manifest -> game info file) manually.
+- Preventative rule:
+  - Derive dependent file paths from manifest metadata by default and keep explicit override flags optional.
+- How to detect earlier:
+  - During CLI design review, list all required arguments and identify which can be inferred deterministically from existing artifacts.
+
+## 2026-02-11 - Modeling prep should exclude transcript test clips by default
+- What happened:
+  - Test clip artifacts (`*.test30s.json`, `*.test60s.json`) can coexist with full transcripts and would duplicate/ skew per-game term counts if included automatically.
+- Root cause:
+  - Transcript output naming intentionally supports quick test runs and full runs in the same directory.
+- Preventative rule:
+  - Dataset builders should skip `.test` transcript files by default and expose an explicit opt-in flag to include them.
+- How to detect earlier:
+  - Add fixture coverage with mixed full + test transcript files and assert default row count excludes test clips.
