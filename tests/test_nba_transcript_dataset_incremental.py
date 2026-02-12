@@ -169,6 +169,108 @@ def test_incremental_game_then_term_then_game_backfill() -> None:
             shutil.rmtree(base_dir)
 
 
+def test_incremental_keeps_separate_rows_for_multiple_feeds_same_game() -> None:
+    base_dir = Path("tests/fixtures/_dataset_incremental_multi_feed")
+    transcripts_dir = base_dir / "transcripts"
+    game_info_dir = base_dir / "game_info"
+    manifest_path = base_dir / "manifest.json"
+    game_factors_path = base_dir / "game_factors.csv"
+    game_term_path = base_dir / "game_terms.csv"
+    registry_path = base_dir / "term_registry.json"
+
+    try:
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        game_info_dir.mkdir(parents=True, exist_ok=True)
+
+        _write_manifest(
+            manifest_path,
+            rows=[
+                {
+                    "audio_id": "a_home",
+                    "date": "2026-02-09",
+                    "away": "Atlanta Hawks",
+                    "home": "Minnesota Timberwolves",
+                    "feed_label": "home",
+                },
+                {
+                    "audio_id": "a_away",
+                    "date": "2026-02-09",
+                    "away": "Atlanta Hawks",
+                    "home": "Minnesota Timberwolves",
+                    "feed_label": "away",
+                },
+            ],
+        )
+        _write_game_info_file(
+            game_info_dir / "nba_game_info_2026-02-09.json",
+            packets=[
+                _packet(
+                    game_id="G1",
+                    date="2026-02-09",
+                    away="Atlanta Hawks",
+                    home="Minnesota Timberwolves",
+                    away_players=["Onyeka Okongwu"],
+                    home_players=["Anthony Edwards"],
+                    commentators=["Bob Rathbun"],
+                )
+            ],
+        )
+        _write_transcript(
+            transcripts_dir / "a_home.json",
+            audio_id="a_home",
+            date="2026-02-09",
+            away="Atlanta Hawks",
+            home="Minnesota Timberwolves",
+            text="buzzer once",
+        )
+        _write_transcript(
+            transcripts_dir / "a_away.json",
+            audio_id="a_away",
+            date="2026-02-09",
+            away="Atlanta Hawks",
+            home="Minnesota Timberwolves",
+            text="buzzer buzzer buzzer",
+        )
+
+        game_result = build_incremental_game_term_datasets(
+            mode="game",
+            transcripts_dir=transcripts_dir,
+            manifest_file=manifest_path,
+            game_info_dir=game_info_dir,
+            game_factors_path=game_factors_path,
+            game_term_mentions_path=game_term_path,
+            term_registry_path=registry_path,
+        )
+        assert game_result["summary"]["appended_game_rows"] == 2
+
+        term_result = build_incremental_game_term_datasets(
+            mode="term",
+            transcripts_dir=transcripts_dir,
+            manifest_file=manifest_path,
+            game_info_dir=game_info_dir,
+            terms=[TermDefinition(name="buzzer", pattern="buzzer", is_regex=False)],
+            game_factors_path=game_factors_path,
+            game_term_mentions_path=game_term_path,
+            term_registry_path=registry_path,
+        )
+        assert term_result["summary"]["appended_term_rows"] == 2
+
+        game_rows = _read_csv_rows(game_factors_path)
+        assert len(game_rows) == 2
+        assert {row["game_id"] for row in game_rows} == {"G1"}
+        assert {row["audio_id"] for row in game_rows} == {"a_home", "a_away"}
+
+        term_rows = _read_csv_rows(game_term_path)
+        assert len(term_rows) == 2
+        assert {row["game_id"] for row in term_rows} == {"G1"}
+        by_audio = {row["audio_id"]: int(row["mention_count"]) for row in term_rows}
+        assert by_audio["a_home"] == 1
+        assert by_audio["a_away"] == 3
+    finally:
+        if base_dir.exists():
+            shutil.rmtree(base_dir)
+
+
 def _write_manifest(path: Path, *, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows), encoding="utf-8")

@@ -751,6 +751,7 @@
 - [x] Add append-only dataset updates (no delete/reinsert cycle).
 - [x] Support build mode for game factors and build mode for terms.
 - [x] Keep term mode limited to previously processed games from game dataset.
+- [x] Represent multiple transcripts for the same game as separate feed-level rows.
 
 ## Plan
 - [x] Extend `build-dataset` CLI with mode selection (`game`, `term`, `both`).
@@ -787,6 +788,7 @@
 - Added incremental dataset engine in `transcript_dataset.py`:
   - `build_incremental_game_term_datasets(...)`
   - append-only game factors CSV + term mentions CSV + term registry JSON.
+  - game/term rows are feed-level (`audio_id`/`feed_label`) so same `game_id` can have multiple rows.
 - Added new default output helpers:
   - `default_game_factors_path()`
   - `default_game_term_mentions_path()`
@@ -799,6 +801,7 @@
   - incremental modes avoid rewrite and append only missing keys.
 - Added tests:
   - `tests/test_nba_transcript_dataset_incremental.py` (game->term->game backfill workflow)
+  - `tests/test_nba_transcript_dataset_incremental.py` (multi-feed same-game separation)
   - `tests/test_nba_audio_cli_dataset_mode.py` (mode resolution).
 - Updated `RUNBOOK.md` section `4.8` with mode-specific commands and semantics.
 

@@ -353,8 +353,9 @@ python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 
 
 1. Game factors table (`game_id` + non-transcript factors):
   - teams, rosters, commentators, broadcast scope metadata
+  - one row per transcript feed (`audio_id`/`feed_label`) for the same `game_id`
 2. Game-term mentions table:
-  - `game_id`, `term`, `mention_count`
+  - `game_id`, `audio_id`, `feed_label`, `term`, `mention_count`
 
 Append-only outputs (defaults):
 - `data/modeling/nba_game_factors.csv`

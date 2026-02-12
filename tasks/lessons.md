@@ -210,6 +210,16 @@
 - How to detect earlier:
   - Add tests that run the same command multiple times and assert row counts do not increase after the first append.
 
+## 2026-02-12 - Game-level IDs are not unique when feeds are split
+- What happened:
+  - A single `game_id` can have multiple transcript feeds (home/away commentary), so one-row-per-game assumptions dropped feed-level detail.
+- Root cause:
+  - Initial incremental schema keyed dedupe only by `game_id`.
+- Preventative rule:
+  - Use feed-aware keys for append-only tables: game factors keyed by (`game_id`, `audio_id|feed_label`) and term rows keyed by (`game_id`, `audio_id|feed_label`, `term`).
+- How to detect earlier:
+  - Add tests with two transcripts mapping to the same `game_id` and assert two rows are persisted in both tables.
+
 ## 2026-02-12 - Raw payload retention should be justified by a concrete use case
 - What happened:
   - Orderbook polling stored full `raw_orderbook_json` in addition to normalized levels and metrics.

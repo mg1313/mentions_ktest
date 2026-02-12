@@ -22,6 +22,11 @@ class TermDefinition:
 
 
 GAME_FACTORS_FIELDNAMES = (
+    "audio_id",
+    "feed_label",
+    "transcript_file",
+    "video_url",
+    "source_feed_page",
     "game_id",
     "date",
     "away",
@@ -42,6 +47,8 @@ GAME_FACTORS_FIELDNAMES = (
 )
 
 GAME_TERM_FIELDNAMES = (
+    "audio_id",
+    "feed_label",
     "game_id",
     "date",
     "away",
@@ -219,21 +226,25 @@ def build_incremental_game_term_datasets(
     terms_input = terms or []
 
     existing_games = _load_existing_game_rows(game_path)
-    existing_game_ids = {str(row.get("game_id", "")).strip() for row in existing_games if str(row.get("game_id", "")).strip()}
+    existing_game_keys = {_game_row_key(row) for row in existing_games if _game_row_key(row) is not None}
     appended_game_rows: list[dict[str, Any]] = []
+    game_factor_errors: list[dict[str, str]] = []
 
     if mode_normalized in {"game", "both"}:
-        new_game_rows = _extract_game_factor_rows_from_game_info(
+        new_game_rows, game_factor_errors = _extract_game_factor_rows_from_transcripts(
+            transcripts_dir=Path(transcripts_dir),
+            manifest_file=Path(manifest_file),
             game_info_dir=Path(game_info_dir),
+            include_test_transcripts=include_test_transcripts,
             national_network_markers=national_network_markers or tuple(),
             logger=log,
         )
         for row in new_game_rows:
-            game_id = str(row.get("game_id", "")).strip()
-            if not game_id or game_id in existing_game_ids:
+            key = _game_row_key(row)
+            if key is None or key in existing_game_keys:
                 continue
             appended_game_rows.append(row)
-            existing_game_ids.add(game_id)
+            existing_game_keys.add(key)
             existing_games.append(row)
         _append_rows_to_csv(
             path=game_path,
@@ -269,10 +280,7 @@ def build_incremental_game_term_datasets(
         active_terms = list(by_name.values())
 
     existing_term_rows = _load_existing_term_rows(term_mentions_path)
-    existing_term_keys = {
-        (str(row.get("game_id", "")).strip(), str(row.get("term", "")).strip().casefold())
-        for row in existing_term_rows
-    }
+    existing_term_keys = {_term_row_key(row) for row in existing_term_rows if _term_row_key(row) is not None}
     appended_term_rows: list[dict[str, Any]] = []
     transcript_errors: list[dict[str, str]] = []
 
@@ -280,26 +288,44 @@ def build_incremental_game_term_datasets(
         if not existing_games:
             log.warning("no game rows available; term dataset update skipped")
         else:
-            game_texts, transcript_errors = _build_game_transcript_texts(
+            transcript_entries, transcript_errors = _build_game_transcript_entries(
                 transcripts_dir=Path(transcripts_dir),
                 manifest_file=Path(manifest_file),
                 game_info_dir=Path(game_info_dir),
                 include_test_transcripts=include_test_transcripts,
+                national_network_markers=national_network_markers or tuple(),
                 logger=log,
             )
+            text_by_key: dict[tuple[str, str], str] = {}
+            for entry in transcript_entries:
+                entry_key = _game_row_key(entry)
+                if entry_key is None:
+                    continue
+                text_by_key[entry_key] = str(entry.get("text", ""))
             counters = {term.name: _make_term_counter(term) for term in active_terms}
             for game_row in sorted(existing_games, key=lambda row: (row.get("date", ""), row.get("away", ""), row.get("home", ""))):
+                game_key = _game_row_key(game_row)
+                if game_key is None:
+                    continue
                 game_id = str(game_row.get("game_id", "")).strip()
                 if not game_id:
                     continue
-                text = game_texts.get(game_id, "")
+                text = text_by_key.get(game_key, "")
+                audio_id = str(game_row.get("audio_id", "")).strip()
+                feed_label = str(game_row.get("feed_label", "")).strip()
                 for term in active_terms:
-                    key = (game_id, term.name.casefold())
+                    key = (
+                        game_id,
+                        _coalesce_text(audio_id, feed_label).casefold(),
+                        term.name.casefold(),
+                    )
                     if key in existing_term_keys:
                         continue
                     mention_count = len(list(counters[term.name].finditer(text)))
                     appended_term_rows.append(
                         {
+                            "audio_id": audio_id,
+                            "feed_label": feed_label,
                             "game_id": game_id,
                             "date": str(game_row.get("date", "")),
                             "away": str(game_row.get("away", "")),
@@ -333,6 +359,7 @@ def build_incremental_game_term_datasets(
             "active_terms_count": len(active_terms),
         },
         "errors": {
+            "game_factor_errors": game_factor_errors,
             "transcript_errors": transcript_errors,
         },
     }
@@ -479,31 +506,30 @@ def _merge_terms_into_registry(*, registry: list[dict[str, Any]], incoming_terms
     return added
 
 
-def _extract_game_factor_rows_from_game_info(
+def _extract_game_factor_rows_from_transcripts(
     *,
+    transcripts_dir: Path,
+    manifest_file: Path,
     game_info_dir: Path,
+    include_test_transcripts: bool,
     national_network_markers: tuple[str, ...],
     logger: logging.Logger,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    entries, errors = _build_game_transcript_entries(
+        transcripts_dir=transcripts_dir,
+        manifest_file=manifest_file,
+        game_info_dir=game_info_dir,
+        include_test_transcripts=include_test_transcripts,
+        national_network_markers=national_network_markers,
+        logger=logger,
+    )
     rows: list[dict[str, Any]] = []
-    if not game_info_dir.exists():
-        raise TranscriptDatasetError(f"game info dir not found: {game_info_dir}")
-
-    for path in sorted(game_info_dir.glob("nba_game_info_*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8-sig"))
-            packets = _extract_packets(payload)
-            for packet in packets:
-                row = _packet_to_game_factor_row(
-                    packet=packet,
-                    national_network_markers=national_network_markers,
-                )
-                if row is not None:
-                    rows.append(row)
-        except Exception as exc:
-            logger.error("failed to parse game info file %s: %s", path, exc)
-    rows.sort(key=lambda row: (row.get("date", ""), row.get("away", ""), row.get("home", "")))
-    return rows
+    for entry in entries:
+        row = dict(entry)
+        row.pop("text", None)
+        rows.append(row)
+    rows.sort(key=lambda row: (row.get("date", ""), row.get("away", ""), row.get("home", ""), row.get("feed_label", "")))
+    return rows, errors
 
 
 def _extract_packets(payload: Any) -> list[dict[str, Any]]:
@@ -514,7 +540,16 @@ def _extract_packets(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _packet_to_game_factor_row(*, packet: dict[str, Any], national_network_markers: tuple[str, ...]) -> dict[str, Any] | None:
+def _packet_to_game_factor_row(
+    *,
+    packet: dict[str, Any],
+    audio_id: str,
+    feed_label: str,
+    transcript_file: str,
+    video_url: str,
+    source_feed_page: str,
+    national_network_markers: tuple[str, ...],
+) -> dict[str, Any] | None:
     game_id = _coalesce_text(packet.get("game_id"))
     if not game_id:
         return None
@@ -543,6 +578,11 @@ def _packet_to_game_factor_row(*, packet: dict[str, Any], national_network_marke
         roster_home_json = json.dumps(home_payload if isinstance(home_payload, list) else [], ensure_ascii=False, sort_keys=True)
 
     return {
+        "audio_id": audio_id,
+        "feed_label": feed_label,
+        "transcript_file": transcript_file,
+        "video_url": video_url,
+        "source_feed_page": source_feed_page,
         "game_id": game_id,
         "date": date_value,
         "away": away,
@@ -563,46 +603,55 @@ def _packet_to_game_factor_row(*, packet: dict[str, Any], national_network_marke
     }
 
 
-def _build_game_transcript_texts(
+def _build_game_transcript_entries(
     *,
     transcripts_dir: Path,
     manifest_file: Path,
     game_info_dir: Path,
     include_test_transcripts: bool,
+    national_network_markers: tuple[str, ...],
     logger: logging.Logger,
-) -> tuple[dict[str, str], list[dict[str, str]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     manifest_by_audio_id = _load_manifest_map(manifest_file)
     packet_lookup = _GamePacketLookup(game_info_dir=game_info_dir, logger=logger)
     transcript_paths = _list_transcript_files(
         transcripts_dir=transcripts_dir,
         include_test_transcripts=include_test_transcripts,
     )
-    game_text_parts: dict[str, list[str]] = {}
+    entries: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     for transcript_path in transcript_paths:
         try:
             payload = _load_json_object(transcript_path)
-            audio_id = _coalesce_text(payload.get("audio_id"))
+            audio_id = _coalesce_text(payload.get("audio_id"), transcript_path.stem.split(".")[0])
             manifest_row = manifest_by_audio_id.get(audio_id, {})
             date_value = _coalesce_text(payload.get("date"), manifest_row.get("date"))
             away_value = _coalesce_text(payload.get("away"), manifest_row.get("away"))
             home_value = _coalesce_text(payload.get("home"), manifest_row.get("home"))
+            feed_label = _coalesce_text(payload.get("feed_label"), manifest_row.get("feed_label"))
+            video_url = _coalesce_text(payload.get("video_url"), manifest_row.get("video_url"))
+            source_feed_page = _coalesce_text(payload.get("source_feed_page"), manifest_row.get("source_feed_page"))
             packet = packet_lookup.lookup(date_value=date_value, away_value=away_value, home_value=home_value)
             if not isinstance(packet, dict):
                 continue
-            game_id = _coalesce_text(packet.get("game_id"))
-            if not game_id:
+            row = _packet_to_game_factor_row(
+                packet=packet,
+                audio_id=audio_id,
+                feed_label=feed_label,
+                transcript_file=str(transcript_path),
+                video_url=video_url,
+                source_feed_page=source_feed_page,
+                national_network_markers=national_network_markers,
+            )
+            if row is None:
                 continue
             text = _pick_transcript_text(payload)
-            if not text.strip():
-                continue
-            game_text_parts.setdefault(game_id, []).append(text)
+            row["text"] = text
+            entries.append(row)
         except Exception as exc:
             logger.error("failed to process transcript for term aggregation %s: %s", transcript_path, exc)
             errors.append({"transcript_file": str(transcript_path), "error": str(exc)})
-
-    aggregated = {game_id: "\n".join(parts) for game_id, parts in game_text_parts.items()}
-    return aggregated, errors
+    return entries, errors
 
 
 def _load_manifest_map(path: Path) -> dict[str, dict[str, Any]]:
@@ -976,6 +1025,23 @@ def _term_column_name(term_name: str) -> str:
 
 def _presence_column_name(prefix: str, value: str) -> str:
     return f"{prefix}{_slug(value)}"
+
+
+def _game_row_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    game_id = str(row.get("game_id", "")).strip()
+    if not game_id:
+        return None
+    audio_or_feed = _coalesce_text(row.get("audio_id"), row.get("feed_label"))
+    return (game_id, audio_or_feed.casefold())
+
+
+def _term_row_key(row: dict[str, Any]) -> tuple[str, str, str] | None:
+    game_id = str(row.get("game_id", "")).strip()
+    term = str(row.get("term", "")).strip()
+    if not game_id or not term:
+        return None
+    audio_or_feed = _coalesce_text(row.get("audio_id"), row.get("feed_label"))
+    return (game_id, audio_or_feed.casefold(), term.casefold())
 
 
 def _slug(value: str) -> str:
