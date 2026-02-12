@@ -21,6 +21,37 @@ class TermDefinition:
     is_regex: bool = False
 
 
+GAME_FACTORS_FIELDNAMES = (
+    "game_id",
+    "date",
+    "away",
+    "home",
+    "matchup",
+    "is_national_tv",
+    "is_local_tv",
+    "tv_scope_label",
+    "commentators",
+    "broadcast_networks",
+    "broadcast_scopes",
+    "players_away",
+    "players_home",
+    "players_all",
+    "roster_away_json",
+    "roster_home_json",
+    "created_at_utc",
+)
+
+GAME_TERM_FIELDNAMES = (
+    "game_id",
+    "date",
+    "away",
+    "home",
+    "term",
+    "mention_count",
+    "processed_at_utc",
+)
+
+
 def load_term_definitions(*, terms_file: str | Path | None = None, inline_terms: list[str] | None = None) -> list[TermDefinition]:
     terms: list[TermDefinition] = []
     if terms_file:
@@ -151,6 +182,162 @@ def default_output_csv_path() -> Path:
     return Path("data") / "modeling" / "nba_transcript_term_audio_rows.csv"
 
 
+def default_game_factors_path() -> Path:
+    return Path("data") / "modeling" / "nba_game_factors.csv"
+
+
+def default_game_term_mentions_path() -> Path:
+    return Path("data") / "modeling" / "nba_game_term_mentions.csv"
+
+
+def default_term_registry_path() -> Path:
+    return Path("data") / "modeling" / "nba_terms_registry.json"
+
+
+def build_incremental_game_term_datasets(
+    *,
+    mode: str,
+    transcripts_dir: str | Path,
+    manifest_file: str | Path,
+    game_info_dir: str | Path,
+    include_test_transcripts: bool = False,
+    national_network_markers: tuple[str, ...] | None = None,
+    terms: list[TermDefinition] | None = None,
+    game_factors_path: str | Path | None = None,
+    game_term_mentions_path: str | Path | None = None,
+    term_registry_path: str | Path | None = None,
+    logger: logging.Logger | None = None,
+) -> dict[str, Any]:
+    log = logger or logging.getLogger(__name__)
+    mode_normalized = mode.strip().lower()
+    if mode_normalized not in {"game", "term", "both"}:
+        raise TranscriptDatasetError("mode must be one of: game, term, both")
+
+    game_path = Path(game_factors_path) if game_factors_path else default_game_factors_path()
+    term_mentions_path = Path(game_term_mentions_path) if game_term_mentions_path else default_game_term_mentions_path()
+    registry_path = Path(term_registry_path) if term_registry_path else default_term_registry_path()
+    terms_input = terms or []
+
+    existing_games = _load_existing_game_rows(game_path)
+    existing_game_ids = {str(row.get("game_id", "")).strip() for row in existing_games if str(row.get("game_id", "")).strip()}
+    appended_game_rows: list[dict[str, Any]] = []
+
+    if mode_normalized in {"game", "both"}:
+        new_game_rows = _extract_game_factor_rows_from_game_info(
+            game_info_dir=Path(game_info_dir),
+            national_network_markers=national_network_markers or tuple(),
+            logger=log,
+        )
+        for row in new_game_rows:
+            game_id = str(row.get("game_id", "")).strip()
+            if not game_id or game_id in existing_game_ids:
+                continue
+            appended_game_rows.append(row)
+            existing_game_ids.add(game_id)
+            existing_games.append(row)
+        _append_rows_to_csv(
+            path=game_path,
+            rows=appended_game_rows,
+            fieldnames=GAME_FACTORS_FIELDNAMES,
+        )
+
+    registry_before = _load_term_registry(registry_path)
+    registry_terms = _registry_to_terms(registry_before)
+    added_registry_terms = _merge_terms_into_registry(
+        registry=registry_before,
+        incoming_terms=terms_input if mode_normalized in {"term", "both"} else [],
+        logger=log,
+    )
+    if added_registry_terms > 0:
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(json.dumps(registry_before, indent=2, sort_keys=True), encoding="utf-8")
+    registry_terms = _registry_to_terms(registry_before)
+
+    active_terms: list[TermDefinition] = []
+    if mode_normalized == "term":
+        if not terms_input:
+            raise TranscriptDatasetError("term mode requires --term and/or --terms-file")
+        active_terms = terms_input
+    elif mode_normalized == "game":
+        active_terms = registry_terms
+    else:
+        # both
+        by_name: dict[str, TermDefinition] = {}
+        for term in registry_terms + terms_input:
+            key = term.name.casefold()
+            by_name[key] = term
+        active_terms = list(by_name.values())
+
+    existing_term_rows = _load_existing_term_rows(term_mentions_path)
+    existing_term_keys = {
+        (str(row.get("game_id", "")).strip(), str(row.get("term", "")).strip().casefold())
+        for row in existing_term_rows
+    }
+    appended_term_rows: list[dict[str, Any]] = []
+    transcript_errors: list[dict[str, str]] = []
+
+    if active_terms:
+        if not existing_games:
+            log.warning("no game rows available; term dataset update skipped")
+        else:
+            game_texts, transcript_errors = _build_game_transcript_texts(
+                transcripts_dir=Path(transcripts_dir),
+                manifest_file=Path(manifest_file),
+                game_info_dir=Path(game_info_dir),
+                include_test_transcripts=include_test_transcripts,
+                logger=log,
+            )
+            counters = {term.name: _make_term_counter(term) for term in active_terms}
+            for game_row in sorted(existing_games, key=lambda row: (row.get("date", ""), row.get("away", ""), row.get("home", ""))):
+                game_id = str(game_row.get("game_id", "")).strip()
+                if not game_id:
+                    continue
+                text = game_texts.get(game_id, "")
+                for term in active_terms:
+                    key = (game_id, term.name.casefold())
+                    if key in existing_term_keys:
+                        continue
+                    mention_count = len(list(counters[term.name].finditer(text)))
+                    appended_term_rows.append(
+                        {
+                            "game_id": game_id,
+                            "date": str(game_row.get("date", "")),
+                            "away": str(game_row.get("away", "")),
+                            "home": str(game_row.get("home", "")),
+                            "term": term.name,
+                            "mention_count": mention_count,
+                            "processed_at_utc": _utc_now_iso(),
+                        }
+                    )
+                    existing_term_keys.add(key)
+            _append_rows_to_csv(
+                path=term_mentions_path,
+                rows=appended_term_rows,
+                fieldnames=GAME_TERM_FIELDNAMES,
+            )
+
+    return {
+        "mode": mode_normalized,
+        "outputs": {
+            "game_factors_csv": str(game_path),
+            "game_term_mentions_csv": str(term_mentions_path),
+            "term_registry_json": str(registry_path),
+        },
+        "summary": {
+            "existing_game_rows": len(existing_games) - len(appended_game_rows),
+            "appended_game_rows": len(appended_game_rows),
+            "existing_term_rows": len(existing_term_rows),
+            "appended_term_rows": len(appended_term_rows),
+            "registered_terms_total": len(registry_before),
+            "registered_terms_added": added_registry_terms,
+            "active_terms_count": len(active_terms),
+        },
+        "errors": {
+            "transcript_errors": transcript_errors,
+        },
+    }
+
+
 def _load_terms_from_file(path: Path) -> list[TermDefinition]:
     if not path.exists():
         raise TranscriptDatasetError(f"terms file not found: {path}")
@@ -195,6 +382,227 @@ def _make_term_counter(term: TermDefinition) -> re.Pattern[str]:
     escaped = re.escape(term.pattern.strip())
     escaped = escaped.replace(r"\ ", r"\s+")
     return re.compile(rf"(?<!\w){escaped}(?!\w)", re.IGNORECASE)
+
+
+def _load_existing_game_rows(path: Path) -> list[dict[str, Any]]:
+    return _load_csv_rows(path)
+
+
+def _load_existing_term_rows(path: Path) -> list[dict[str, Any]]:
+    return _load_csv_rows(path)
+
+
+def _load_csv_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        return [dict(row) for row in reader]
+
+
+def _append_rows_to_csv(*, path: Path, rows: list[dict[str, Any]], fieldnames: tuple[str, ...]) -> None:
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    exists = path.exists()
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(fieldnames))
+        if not exists:
+            writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+
+def _load_term_registry(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, list):
+        raise TranscriptDatasetError(f"term registry must be a list: {path}")
+    out: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        pattern = str(item.get("pattern", "")).strip() or name
+        if not name:
+            continue
+        out.append({"name": name, "pattern": pattern, "is_regex": bool(item.get("is_regex", False))})
+    return out
+
+
+def _registry_to_terms(rows: list[dict[str, Any]]) -> list[TermDefinition]:
+    terms: list[TermDefinition] = []
+    for row in rows:
+        terms.append(
+            TermDefinition(
+                name=str(row.get("name", "")),
+                pattern=str(row.get("pattern", "")) or str(row.get("name", "")),
+                is_regex=bool(row.get("is_regex", False)),
+            )
+        )
+    return terms
+
+
+def _merge_terms_into_registry(*, registry: list[dict[str, Any]], incoming_terms: list[TermDefinition], logger: logging.Logger) -> int:
+    if not incoming_terms:
+        return 0
+    by_key: dict[str, dict[str, Any]] = {}
+    for row in registry:
+        name = str(row.get("name", "")).strip()
+        if name:
+            by_key[name.casefold()] = row
+
+    added = 0
+    for term in incoming_terms:
+        key = term.name.casefold()
+        existing = by_key.get(key)
+        if existing is None:
+            record = {
+                "name": term.name,
+                "pattern": term.pattern,
+                "is_regex": term.is_regex,
+                "added_at_utc": _utc_now_iso(),
+            }
+            registry.append(record)
+            by_key[key] = record
+            added += 1
+            continue
+        existing_pattern = str(existing.get("pattern", ""))
+        existing_is_regex = bool(existing.get("is_regex", False))
+        if existing_pattern != term.pattern or existing_is_regex != term.is_regex:
+            logger.warning(
+                "term '%s' already exists in registry with different pattern/regex; keeping existing definition",
+                term.name,
+            )
+    registry.sort(key=lambda item: str(item.get("name", "")).casefold())
+    return added
+
+
+def _extract_game_factor_rows_from_game_info(
+    *,
+    game_info_dir: Path,
+    national_network_markers: tuple[str, ...],
+    logger: logging.Logger,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not game_info_dir.exists():
+        raise TranscriptDatasetError(f"game info dir not found: {game_info_dir}")
+
+    for path in sorted(game_info_dir.glob("nba_game_info_*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            packets = _extract_packets(payload)
+            for packet in packets:
+                row = _packet_to_game_factor_row(
+                    packet=packet,
+                    national_network_markers=national_network_markers,
+                )
+                if row is not None:
+                    rows.append(row)
+        except Exception as exc:
+            logger.error("failed to parse game info file %s: %s", path, exc)
+    rows.sort(key=lambda row: (row.get("date", ""), row.get("away", ""), row.get("home", "")))
+    return rows
+
+
+def _extract_packets(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict) and isinstance(payload.get("packets"), list):
+        return [item for item in payload["packets"] if isinstance(item, dict)]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def _packet_to_game_factor_row(*, packet: dict[str, Any], national_network_markers: tuple[str, ...]) -> dict[str, Any] | None:
+    game_id = _coalesce_text(packet.get("game_id"))
+    if not game_id:
+        return None
+    away = _coalesce_text(packet.get("away"))
+    home = _coalesce_text(packet.get("home"))
+    date_value = _coalesce_text(packet.get("date"))
+
+    commentators = _extract_commentator_names(packet)
+    players_away, players_home = _extract_players(packet)
+    players_all = sorted(set(players_away + players_home))
+    broadcast_networks, broadcast_scopes = _extract_broadcast_metadata(packet)
+    is_national_tv = _is_national_tv(
+        packet=packet,
+        scopes=broadcast_scopes,
+        networks=broadcast_networks,
+        national_network_markers=national_network_markers,
+    )
+    tv_scope_label = _classify_tv_scope(scopes=broadcast_scopes, is_national_tv=is_national_tv)
+    rosters = packet.get("rosters", {})
+    roster_away_json = "[]"
+    roster_home_json = "[]"
+    if isinstance(rosters, dict):
+        away_payload = rosters.get("away", [])
+        home_payload = rosters.get("home", [])
+        roster_away_json = json.dumps(away_payload if isinstance(away_payload, list) else [], ensure_ascii=False, sort_keys=True)
+        roster_home_json = json.dumps(home_payload if isinstance(home_payload, list) else [], ensure_ascii=False, sort_keys=True)
+
+    return {
+        "game_id": game_id,
+        "date": date_value,
+        "away": away,
+        "home": home,
+        "matchup": _matchup(away, home),
+        "is_national_tv": bool(is_national_tv),
+        "is_local_tv": tv_scope_label == "local",
+        "tv_scope_label": tv_scope_label,
+        "commentators": "|".join(commentators),
+        "broadcast_networks": "|".join(broadcast_networks),
+        "broadcast_scopes": "|".join(broadcast_scopes),
+        "players_away": "|".join(players_away),
+        "players_home": "|".join(players_home),
+        "players_all": "|".join(players_all),
+        "roster_away_json": roster_away_json,
+        "roster_home_json": roster_home_json,
+        "created_at_utc": _utc_now_iso(),
+    }
+
+
+def _build_game_transcript_texts(
+    *,
+    transcripts_dir: Path,
+    manifest_file: Path,
+    game_info_dir: Path,
+    include_test_transcripts: bool,
+    logger: logging.Logger,
+) -> tuple[dict[str, str], list[dict[str, str]]]:
+    manifest_by_audio_id = _load_manifest_map(manifest_file)
+    packet_lookup = _GamePacketLookup(game_info_dir=game_info_dir, logger=logger)
+    transcript_paths = _list_transcript_files(
+        transcripts_dir=transcripts_dir,
+        include_test_transcripts=include_test_transcripts,
+    )
+    game_text_parts: dict[str, list[str]] = {}
+    errors: list[dict[str, str]] = []
+    for transcript_path in transcript_paths:
+        try:
+            payload = _load_json_object(transcript_path)
+            audio_id = _coalesce_text(payload.get("audio_id"))
+            manifest_row = manifest_by_audio_id.get(audio_id, {})
+            date_value = _coalesce_text(payload.get("date"), manifest_row.get("date"))
+            away_value = _coalesce_text(payload.get("away"), manifest_row.get("away"))
+            home_value = _coalesce_text(payload.get("home"), manifest_row.get("home"))
+            packet = packet_lookup.lookup(date_value=date_value, away_value=away_value, home_value=home_value)
+            if not isinstance(packet, dict):
+                continue
+            game_id = _coalesce_text(packet.get("game_id"))
+            if not game_id:
+                continue
+            text = _pick_transcript_text(payload)
+            if not text.strip():
+                continue
+            game_text_parts.setdefault(game_id, []).append(text)
+        except Exception as exc:
+            logger.error("failed to process transcript for term aggregation %s: %s", transcript_path, exc)
+            errors.append({"transcript_file": str(transcript_path), "error": str(exc)})
+
+    aggregated = {game_id: "\n".join(parts) for game_id, parts in game_text_parts.items()}
+    return aggregated, errors
 
 
 def _load_manifest_map(path: Path) -> dict[str, dict[str, Any]]:

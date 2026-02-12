@@ -742,3 +742,122 @@
     - `$env:PYTHONPATH='src'; python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --terms-file configs/transcript_terms.example.json --output-json tests/fixtures/_dataset_smoke.json --skip-csv`
 - How to run:
   - `python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json --game-info-dir data --terms-file configs/transcript_terms.example.json`
+
+---
+
+# Task: Incremental Game/Term Dataset Modes (Append-Only)
+
+## Scope Guard
+- [x] Add append-only dataset updates (no delete/reinsert cycle).
+- [x] Support build mode for game factors and build mode for terms.
+- [x] Keep term mode limited to previously processed games from game dataset.
+
+## Plan
+- [x] Extend `build-dataset` CLI with mode selection (`game`, `term`, `both`).
+- [x] Add persistent game factors dataset keyed by `game_id`.
+- [x] Add persistent term mentions dataset keyed by (`game_id`, `term`).
+- [x] Add persistent term registry so game runs can re-apply previously-run terms.
+- [x] Ensure:
+  - game mode updates game table and backfills term rows for registered terms.
+  - term mode updates term rows across all games already in game table.
+- [x] Add tests for append-only behavior and mode interactions.
+- [x] Update runbook usage examples.
+
+## Data Flow
+- Inputs:
+  - `data/nba_game_info_YYYY-MM-DD.json`
+  - `data/transcripts/*.json`
+  - `data/nba_audio_manifest.json`
+  - term arguments (`--term`/`--terms-file`)
+- Transforms:
+  - game packet extraction -> append new `game_id` rows
+  - transcript aggregation by `game_id` -> term counting -> append missing (`game_id`,`term`) rows
+- Outputs:
+  - append-only game factors CSV
+  - append-only term mentions CSV
+  - term registry JSON
+
+## Acceptance Criteria
+- [x] `build-dataset --mode game` appends new game rows and applies previously-registered terms to missing game/term rows.
+- [x] `build-dataset --mode term --term "x"` appends missing rows for that term across all known games.
+- [x] Existing rows are not deleted/reinserted.
+- [x] Tests pass.
+
+## Progress Notes
+- Added incremental dataset engine in `transcript_dataset.py`:
+  - `build_incremental_game_term_datasets(...)`
+  - append-only game factors CSV + term mentions CSV + term registry JSON.
+- Added new default output helpers:
+  - `default_game_factors_path()`
+  - `default_game_term_mentions_path()`
+  - `default_term_registry_path()`
+- Updated `audio_cli.py` `build-dataset` behavior:
+  - new `--mode {auto,game,term,both,snapshot}`
+  - auto mode resolves to:
+    - `game` when no term args provided
+    - `term` when term args provided
+  - incremental modes avoid rewrite and append only missing keys.
+- Added tests:
+  - `tests/test_nba_transcript_dataset_incremental.py` (game->term->game backfill workflow)
+  - `tests/test_nba_audio_cli_dataset_mode.py` (mode resolution).
+- Updated `RUNBOOK.md` section `4.8` with mode-specific commands and semantics.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/nba_link_scout/transcript_dataset.py` with append-only incremental dataset functions.
+  - Updated `src/mentions_sports_poller/nba_link_scout/audio_cli.py` to support incremental/snapshot dataset modes.
+  - Added `tests/test_nba_transcript_dataset_incremental.py`.
+  - Added `tests/test_nba_audio_cli_dataset_mode.py`.
+  - Updated `RUNBOOK.md`.
+- Why:
+  - Needed two persistent datasets:
+    1) game factors keyed by `game_id`,
+    2) game-term mentions keyed by (`game_id`,`term`),
+    with append-only updates and term registry-driven backfill behavior.
+- How tested:
+  - `python -m pytest -q tests/test_nba_transcript_dataset_incremental.py tests/test_nba_audio_cli_dataset_mode.py -p no:tmpdir -p no:cacheprovider` -> `4 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `47 passed`.
+  - CLI help check:
+    - `$env:PYTHONPATH='src'; python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --help`
+- How to run:
+  - Game factors + backfill prior terms:
+    - `python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode game --game-info-dir data --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json`
+  - New term across existing games:
+    - `python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode term --term "buzzer" --game-info-dir data --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json`
+
+---
+
+# Task: Remove Raw Orderbook Payload Storage (Mentions)
+
+## Scope Guard
+- [x] Mentions API workflow only.
+- [x] No changes to NBA link scout workflow.
+
+## Plan
+- [x] Remove `raw_orderbook_json` from `orderbook_snapshot` schema definition for new DBs.
+- [x] Remove raw payload write path from `persist_market_poll` and poller callsite.
+- [x] Update tests to reflect lean snapshot schema.
+- [x] Run pytest verification.
+
+## Storage Schema Changes
+- [x] `orderbook_snapshot` no longer includes `raw_orderbook_json` in code-defined schema.
+- [x] Snapshot writes now include only: `ts_utc`, `ticker`, `last_trade_price`, `volume`, `open_interest`.
+- [x] Existing DB files with historical `raw_orderbook_json` columns are backward-compatible; new writes do not populate that column.
+
+## Acceptance Criteria
+- [x] Poller no longer persists raw orderbook JSON.
+- [x] Core price/depth data remains captured via `orderbook_levels`.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/mentions_api/storage.py` to remove raw JSON column from schema and insert/update SQL.
+  - Updated `src/mentions_sports_poller/mentions_api/poller.py` to stop passing serialized raw payloads.
+  - Updated `tests/test_storage_idempotent.py` to match new function signature and assert `raw_orderbook_json` is absent in schema.
+- Why:
+  - Reduce storage growth and keep collection focused on required price/size/time fields.
+- How tested:
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `47 passed`.
+- How to run:
+  - One-shot: `python -m mentions_sports_poller.mentions_api.main --once`
+  - Continuous: `python -m mentions_sports_poller.mentions_api.main`

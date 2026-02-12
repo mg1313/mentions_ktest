@@ -199,3 +199,23 @@
   - Dataset builders should skip `.test` transcript files by default and expose an explicit opt-in flag to include them.
 - How to detect earlier:
   - Add fixture coverage with mixed full + test transcript files and assert default row count excludes test clips.
+
+## 2026-02-12 - Incremental datasets need explicit key-based append semantics
+- What happened:
+  - The new game/term dataset workflow required adding rows without replacing existing rows, while still avoiding duplicates.
+- Root cause:
+  - Snapshot-style rebuild logic was previously the default and did not encode persistence keys.
+- Preventative rule:
+  - For incremental workflows, define dedupe keys up front (`game_id` and (`game_id`,`term`)) and append only missing keys.
+- How to detect earlier:
+  - Add tests that run the same command multiple times and assert row counts do not increase after the first append.
+
+## 2026-02-12 - Raw payload retention should be justified by a concrete use case
+- What happened:
+  - Orderbook polling stored full `raw_orderbook_json` in addition to normalized levels and metrics.
+- Root cause:
+  - Initial design favored maximum auditability without balancing storage growth for long-running polling.
+- Preventative rule:
+  - Default to normalized fields required by active queries; add raw payload retention only with explicit downstream requirements and retention policy.
+- How to detect earlier:
+  - Estimate weekly row/size growth before finalizing schema and flag high-volume JSON columns for review.

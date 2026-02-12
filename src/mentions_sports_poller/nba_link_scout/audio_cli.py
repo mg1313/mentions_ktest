@@ -9,9 +9,13 @@ from pathlib import Path
 from .audio_download import download_audio_from_manifest, load_manifest_rows, sync_audio_manifest
 from .transcript_dataset import (
     TranscriptDatasetError,
+    build_incremental_game_term_datasets,
     build_transcript_feature_dataset,
+    default_game_factors_path,
+    default_game_term_mentions_path,
     default_output_csv_path,
     default_output_json_path,
+    default_term_registry_path,
     load_term_definitions,
     write_dataset_outputs,
 )
@@ -88,36 +92,72 @@ def main() -> None:
 
     if args.command == "build-dataset":
         try:
-            terms = load_term_definitions(
-                terms_file=args.terms_file,
-                inline_terms=args.term,
-            )
-            dataset = build_transcript_feature_dataset(
-                transcripts_dir=args.transcripts_dir,
-                manifest_file=args.manifest,
-                game_info_dir=args.game_info_dir,
-                terms=terms,
-                include_test_transcripts=args.include_test_transcripts,
-                national_network_markers=tuple(args.national_network or []),
-                logger=logger,
-            )
-            json_output_path = args.output_json or default_output_json_path()
-            if args.skip_csv:
-                csv_output_path = None
+            mode = _resolve_dataset_mode(mode_arg=args.mode, has_terms_arg=bool(args.term or args.terms_file))
+            if mode == "snapshot":
+                terms = load_term_definitions(
+                    terms_file=args.terms_file,
+                    inline_terms=args.term,
+                )
+                dataset = build_transcript_feature_dataset(
+                    transcripts_dir=args.transcripts_dir,
+                    manifest_file=args.manifest,
+                    game_info_dir=args.game_info_dir,
+                    terms=terms,
+                    include_test_transcripts=args.include_test_transcripts,
+                    national_network_markers=tuple(args.national_network or []),
+                    logger=logger,
+                )
+                json_output_path = args.output_json or default_output_json_path()
+                if args.skip_csv:
+                    csv_output_path = None
+                else:
+                    csv_output_path = args.output_csv or default_output_csv_path()
+                outputs = write_dataset_outputs(
+                    dataset=dataset,
+                    output_json=json_output_path,
+                    output_csv=csv_output_path,
+                )
+                response = {
+                    "mode": "snapshot",
+                    "summary": dataset.get("summary", {}),
+                    "outputs": outputs,
+                    "error_count": len(dataset.get("errors", [])) if isinstance(dataset.get("errors", []), list) else 0,
+                }
             else:
-                csv_output_path = args.output_csv or default_output_csv_path()
-            outputs = write_dataset_outputs(
-                dataset=dataset,
-                output_json=json_output_path,
-                output_csv=csv_output_path,
-            )
+                terms = []
+                if args.terms_file or args.term:
+                    terms = load_term_definitions(
+                        terms_file=args.terms_file,
+                        inline_terms=args.term,
+                    )
+                incremental = build_incremental_game_term_datasets(
+                    mode=mode,
+                    transcripts_dir=args.transcripts_dir,
+                    manifest_file=args.manifest,
+                    game_info_dir=args.game_info_dir,
+                    include_test_transcripts=args.include_test_transcripts,
+                    national_network_markers=tuple(args.national_network or []),
+                    terms=terms,
+                    game_factors_path=args.game_factors_output or default_game_factors_path(),
+                    game_term_mentions_path=args.game_term_output or default_game_term_mentions_path(),
+                    term_registry_path=args.term_registry_output or default_term_registry_path(),
+                    logger=logger,
+                )
+                response = incremental
+                response["mode"] = mode
+                response["snapshot_outputs"] = {
+                    "json": args.output_json or str(default_output_json_path()),
+                    "csv": None if args.skip_csv else (args.output_csv or str(default_output_csv_path())),
+                }
+                response["snapshot_note"] = (
+                    "Incremental mode does not rewrite snapshot outputs. "
+                    "Use --mode snapshot for full rebuild JSON/CSV."
+                )
+                response["error_count"] = len(
+                    response.get("errors", {}).get("transcript_errors", [])
+                )
         except (OSError, ValueError, TranscriptDatasetError) as exc:
             raise SystemExit(f"dataset build failed: {exc}") from exc
-        response = {
-            "summary": dataset.get("summary", {}),
-            "outputs": outputs,
-            "error_count": len(dataset.get("errors", [])) if isinstance(dataset.get("errors", []), list) else 0,
-        }
         print(json.dumps(response, indent=2, sort_keys=True))
         return
 
@@ -202,7 +242,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     dataset_parser = subparsers.add_parser(
         "build-dataset",
-        help="Build a modeling-ready transcript dataset with term counts and game context features",
+        help=(
+            "Build datasets from transcripts/game info. "
+            "Supports append-only incremental game/term tables and snapshot rebuild mode."
+        ),
     )
     dataset_parser.add_argument(
         "--transcripts-dir",
@@ -225,6 +268,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Inline term (repeatable); combined with --terms-file if provided",
     )
     dataset_parser.add_argument(
+        "--mode",
+        choices=("auto", "game", "term", "both", "snapshot"),
+        default="auto",
+        help=(
+            "Dataset mode: auto infers term/game behavior; game updates game factors "
+            "and backfills registered terms, term updates mentions for provided terms, "
+            "both does both, snapshot rewrites full JSON/CSV snapshot outputs."
+        ),
+    )
+    dataset_parser.add_argument(
         "--include-test-transcripts",
         action="store_true",
         help="Include transcripts with .test in filename (default skips them)",
@@ -245,7 +298,19 @@ def _build_parser() -> argparse.ArgumentParser:
     dataset_parser.add_argument(
         "--skip-csv",
         action="store_true",
-        help="Do not emit CSV output",
+        help="Do not emit CSV output (snapshot mode only)",
+    )
+    dataset_parser.add_argument(
+        "--game-factors-output",
+        help="Append-only game factors CSV path (default: data/modeling/nba_game_factors.csv)",
+    )
+    dataset_parser.add_argument(
+        "--game-term-output",
+        help="Append-only game-term mentions CSV path (default: data/modeling/nba_game_term_mentions.csv)",
+    )
+    dataset_parser.add_argument(
+        "--term-registry-output",
+        help="Term registry JSON path (default: data/modeling/nba_terms_registry.json)",
     )
 
     return parser
@@ -425,6 +490,13 @@ def _find_audio_row(*, manifest_file: str | Path, audio_id: str) -> dict:
         if str(row.get("audio_id", "")) == audio_id:
             return row
     raise TranscriptionError(f"audio_id not found in manifest: {audio_id}")
+
+
+def _resolve_dataset_mode(*, mode_arg: str, has_terms_arg: bool) -> str:
+    value = mode_arg.strip().lower()
+    if value != "auto":
+        return value
+    return "term" if has_terms_arg else "game"
 
 
 if __name__ == "__main__":

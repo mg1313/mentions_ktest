@@ -53,24 +53,26 @@ def test_idempotent_persistence_on_retry() -> None:
     store.persist_market_poll(
         ts_utc=ts_utc,
         market=market,
-        raw_orderbook_json='{"orderbook":{"yes":[[65,10]]}}',
         levels=levels,
         metrics_row=metrics,
     )
     store.persist_market_poll(
         ts_utc=ts_utc,
         market=market,
-        raw_orderbook_json='{"orderbook":{"yes":[[65,10]]}}',
         levels=levels,
         metrics_row=metrics,
     )
 
     conn = sqlite3.connect(db_path)
+    snapshot_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(orderbook_snapshot)").fetchall()
+    }
     snapshot_count = conn.execute("SELECT COUNT(*) FROM orderbook_snapshot").fetchone()[0]
     level_count = conn.execute("SELECT COUNT(*) FROM orderbook_levels").fetchone()[0]
     metrics_count = conn.execute("SELECT COUNT(*) FROM liquidity_metrics").fetchone()[0]
     conn.close()
 
+    assert "raw_orderbook_json" not in snapshot_columns
     assert snapshot_count == 1
     assert level_count == 2
     assert metrics_count == 1

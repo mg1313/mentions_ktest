@@ -76,7 +76,7 @@ python -m mentions_sports_poller.mentions_api.main --once
 - SQLite DB: path from `SQLITE_DB_PATH`
 - Tables:
 - `market_meta`
-- `orderbook_snapshot`
+- `orderbook_snapshot` (`ts_utc`, `ticker`, `last_trade_price`, `volume`, `open_interest`)
 - `orderbook_levels`
 - `liquidity_metrics`
 
@@ -349,33 +349,58 @@ python -m mentions_sports_poller.nba_link_scout.audio_cli transcribe --audio-id 
 
 ### 4.8 Build Modeling Dataset from Final Transcripts
 
-Goal:
-- Convert corrected transcripts into model-ready rows with:
-  - per-term utterance counts
-  - national-vs-local indicator
-  - commentator presence columns
-  - player presence columns
+`build-dataset` now supports two append-only datasets:
 
-Create/edit a terms file (example):
-- `configs/transcript_terms.example.json`
+1. Game factors table (`game_id` + non-transcript factors):
+  - teams, rosters, commentators, broadcast scope metadata
+2. Game-term mentions table:
+  - `game_id`, `term`, `mention_count`
 
-Run:
+Append-only outputs (defaults):
+- `data/modeling/nba_game_factors.csv`
+- `data/modeling/nba_game_term_mentions.csv`
+- `data/modeling/nba_terms_registry.json` (terms you have run before)
+
+Mode A: build/update game factors table
 
 ```powershell
-python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json --game-info-dir data --terms-file configs/transcript_terms.example.json
+python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode game --game-info-dir data --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json
 ```
 
-Optional flags:
-- `--term "<phrase>"` (repeatable; can be combined with `--terms-file`)
-- `--include-test-transcripts` (include files like `*.test30s.json`)
-- `--national-network ESPN --national-network TNT` (mark matching networks as national)
-- `--output-json data/modeling/custom_dataset.json`
-- `--output-csv data/modeling/custom_audio_rows.csv`
-- `--skip-csv`
+Behavior:
+- Appends only new `game_id` rows to game table.
+- Also updates term mentions for any terms already present in the term registry (for missing `game_id`+`term` rows only).
 
-Default outputs:
-- JSON: `data/modeling/nba_transcript_term_dataset.json`
-- CSV: `data/modeling/nba_transcript_term_audio_rows.csv`
+Mode B: run one term across all previously processed games
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode term --term "buzzer" --game-info-dir data --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json
+```
+
+Behavior:
+- Registers the term (if new) in `nba_terms_registry.json`.
+- Appends missing (`game_id`,`term`) rows across games already present in game factors table.
+- Existing rows are kept (no delete/reinsert).
+
+Mode C: run multiple terms from file across all processed games
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode term --terms-file configs/transcript_terms.example.json --game-info-dir data --transcripts-dir data/transcripts --manifest data/nba_audio_manifest.json
+```
+
+Optional:
+- `--mode both` (add game rows + apply provided terms in one call)
+- `--include-test-transcripts` (include files like `*.test30s.json`)
+- `--national-network ESPN --national-network TNT`
+- `--game-factors-output ...`
+- `--game-term-output ...`
+- `--term-registry-output ...`
+
+Snapshot mode (legacy full rebuild JSON/CSV):
+
+```powershell
+python -m mentions_sports_poller.nba_link_scout.audio_cli build-dataset --mode snapshot --terms-file configs/transcript_terms.example.json
+```
 
 ---
 

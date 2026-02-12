@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import json
 import logging
 import random
 import time
@@ -77,7 +75,6 @@ class MentionsSportsPoller:
                 self.store.persist_market_poll(
                     ts_utc=ts_utc,
                     market=market,
-                    raw_orderbook_json=json.dumps(payload, separators=(",", ":"), sort_keys=True),
                     levels=all_levels,
                     metrics_row=metrics,
                 )

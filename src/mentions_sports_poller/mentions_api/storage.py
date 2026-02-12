@@ -35,7 +35,6 @@ class SQLiteStore:
                     last_trade_price REAL,
                     volume INTEGER,
                     open_interest INTEGER,
-                    raw_orderbook_json TEXT,
                     PRIMARY KEY (ts_utc, ticker)
                 );
 
@@ -119,7 +118,6 @@ class SQLiteStore:
         self,
         ts_utc: str,
         market: DiscoveredMarket,
-        raw_orderbook_json: str,
         levels: list[OrderbookLevel],
         metrics_row: dict[str, float | str | None],
     ) -> None:
@@ -127,14 +125,13 @@ class SQLiteStore:
             conn.execute(
                 """
                 INSERT INTO orderbook_snapshot (
-                    ts_utc, ticker, last_trade_price, volume, open_interest, raw_orderbook_json
+                    ts_utc, ticker, last_trade_price, volume, open_interest
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(ts_utc, ticker) DO UPDATE SET
                     last_trade_price=excluded.last_trade_price,
                     volume=excluded.volume,
-                    open_interest=excluded.open_interest,
-                    raw_orderbook_json=excluded.raw_orderbook_json
+                    open_interest=excluded.open_interest
                 """,
                 (
                     ts_utc,
@@ -142,7 +139,6 @@ class SQLiteStore:
                     market.last_trade_price,
                     market.volume,
                     market.open_interest,
-                    raw_orderbook_json,
                 ),
             )
 
