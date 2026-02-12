@@ -965,3 +965,45 @@
   - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `51 passed`.
 - How to run:
   - Existing Mentions poller commands unchanged; term sync runs automatically unless `SYNC_TRANSCRIPT_TERMS_ENABLED=false`.
+
+---
+
+# Task: Fix Truncated Kalshi Term Names in Transcript Sync
+
+## Scope Guard
+- [x] Mentions->transcript term sync path only.
+- [x] No changes to polling scope or non-sports logic.
+
+## Plan
+- [x] Diagnose why term names in `nba_game_term_mentions.csv` appear as 4-char abbreviations.
+- [x] Update extraction to prefer human-readable phrase fields over ticker suffix codes.
+- [x] Parse structured `custom_strike` objects correctly (no dict stringification).
+- [x] Keep fallback to ticker suffix only when no phrase exists.
+- [x] Update tests and run full pytest suite.
+
+## Root Cause
+- Term `name` was derived from ticker suffix (e.g., `AIRB`, `CROW`) which is often a 4-character contract code.
+- `custom_strike` from Kalshi can be structured (dict). Previous normalization converted dict to string, yielding malformed patterns like `{"Word": ...}`.
+
+## Acceptance Criteria
+- [x] New term definitions use full human-readable phrasing where available.
+- [x] Structured custom strike values are parsed into usable term patterns.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/mentions_api/term_sync.py`:
+    - parse `custom_strike` dict/list/string values
+    - split multi-variant phrases (e.g. `A / B / C`)
+    - derive canonical full term names from phrase text
+    - build regex patterns for multi-variant terms
+    - fallback to ticker suffix only when no human phrase exists
+  - Updated `tests/test_mentions_term_sync.py` expectations for full term names.
+- Why:
+  - Ensure dataset terms reflect human-readable Kalshi mentions, not abbreviated ticker codes.
+- How tested:
+  - `python -m pytest -q tests/test_mentions_term_sync.py -p no:tmpdir -p no:cacheprovider` -> `2 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `51 passed`.
+- How to run:
+  - Run Mentions poller (`--once` or continuous); sync will add full-term entries for newly discovered terms automatically.
+  - Existing historical 4-char rows are append-only history and remain unless you reset/regenerate term outputs.

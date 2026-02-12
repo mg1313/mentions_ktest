@@ -15,7 +15,7 @@ def _market(
     *,
     ticker: str,
     subtitle: str | None = None,
-    custom_strike: str | None = None,
+    custom_strike: object | None = None,
 ) -> DiscoveredMarket:
     now = utc_now()
     raw = {}
@@ -43,14 +43,20 @@ def _market(
 def test_extract_kalshi_term_definitions_prefers_custom_strike() -> None:
     terms = extract_kalshi_term_definitions(
         [
-            _market(ticker="KXNBAMENTION-26FEB10SASGSW-AIRB", custom_strike="air ball"),
-            _market(ticker="KXNBAMENTION-26FEB10SASGSW-AIRB", custom_strike="airball"),
+            _market(
+                ticker="KXNBAMENTION-26FEB10SASGSW-AIRB",
+                custom_strike={"Word": "Airball / Airballs / Airballed"},
+            ),
             _market(ticker="KXNBAMENTION-26FEB10SASGSW-OVER", subtitle="overrated"),
         ]
     )
-    as_map = {term.name: term.pattern for term in terms}
-    assert as_map["airb"] == "air ball"
-    assert as_map["over"] == "overrated"
+    as_map = {term.name: term for term in terms}
+    assert "airball" in as_map
+    assert as_map["airball"].is_regex is True
+    assert "airballs" in as_map["airball"].pattern.casefold()
+    assert "airballed" in as_map["airball"].pattern.casefold()
+    assert "overrated" in as_map
+    assert as_map["overrated"].pattern == "overrated"
 
 
 def test_sync_only_new_terms(monkeypatch) -> None:
@@ -68,13 +74,16 @@ def test_sync_only_new_terms(monkeypatch) -> None:
     registry_path = Path(f"tasks/test_term_registry_{uuid4().hex}.json")
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     registry_path.write_text(
-        json.dumps([{"name": "airb", "pattern": "air ball", "regex": False}], indent=2),
+        json.dumps([{"name": "airball", "pattern": "air ball", "regex": False}], indent=2),
         encoding="utf-8",
     )
 
     result = sync_kalshi_terms_to_transcript_dataset(
         markets=[
-            _market(ticker="KXNBAMENTION-26FEB10SASGSW-AIRB", custom_strike="air ball"),
+            _market(
+                ticker="KXNBAMENTION-26FEB10SASGSW-AIRB",
+                custom_strike={"Word": "Airball / Airballs / Airballed"},
+            ),
             _market(ticker="KXNBAMENTION-26FEB10SASGSW-OVER", subtitle="overrated"),
         ],
         enabled=True,
@@ -88,5 +97,4 @@ def test_sync_only_new_terms(monkeypatch) -> None:
 
     assert result["new_terms"] == 1
     assert len(calls) == 1
-    assert [term.name for term in calls[0]["terms"]] == ["over"]
-
+    assert [term.name for term in calls[0]["terms"]] == ["overrated"]

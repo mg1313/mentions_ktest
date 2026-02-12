@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -72,14 +73,20 @@ def extract_kalshi_term_definitions(
 ) -> list[TermDefinition]:
     by_name: dict[str, TermDefinition] = {}
     for market in markets:
-        term_name = _term_name_from_ticker(market.ticker)
-        if not term_name:
-            continue
-        pattern = _extract_human_phrase(market) or term_name
+        variants = _extract_human_variants(market)
+        if variants:
+            term_name = _canonical_term_name(variants[0])
+            pattern, is_regex = _build_pattern_from_variants(variants)
+        else:
+            term_name = _term_name_from_ticker(market.ticker)
+            if not term_name:
+                continue
+            pattern = term_name
+            is_regex = False
         key = term_name.casefold()
         by_name.setdefault(
             key,
-            TermDefinition(name=term_name, pattern=pattern, is_regex=False),
+            TermDefinition(name=term_name, pattern=pattern, is_regex=is_regex),
         )
     return [by_name[key] for key in sorted(by_name.keys())]
 
@@ -91,10 +98,11 @@ def _term_name_from_ticker(ticker: str) -> str | None:
     return suffix or None
 
 
-def _extract_human_phrase(market: DiscoveredMarket) -> str | None:
+def _extract_human_variants(market: DiscoveredMarket) -> list[str]:
     raw_market = market.raw_market if isinstance(market.raw_market, dict) else {}
+    collected: list[str] = []
+    collected.extend(_extract_custom_strike_variants(raw_market.get("custom_strike")))
     for candidate in (
-        raw_market.get("custom_strike"),
         market.subtitle,
         raw_market.get("subtitle"),
         market.yes_sub_title,
@@ -103,10 +111,55 @@ def _extract_human_phrase(market: DiscoveredMarket) -> str | None:
         text = _normalize_text(candidate)
         if not text:
             continue
-        if text.casefold() in _GENERIC_VALUES:
+        collected.extend(_split_phrase_variants(text))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in collected:
+        normalized = _normalize_text(value)
+        if not normalized:
             continue
-        return text
-    return None
+        if normalized.casefold() in _GENERIC_VALUES:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
+def _extract_custom_strike_variants(value: Any) -> list[str]:
+    # Kalshi custom_strike can be a dict, e.g. {"Word": "Airball / Airballs / Airballed"}.
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = _normalize_text(value)
+        if not text:
+            return []
+        return _split_phrase_variants(text)
+    if isinstance(value, dict):
+        values: list[str] = []
+        preferred = ("Word", "word", "Label", "label", "Value", "value")
+        for key in preferred:
+            if key in value:
+                text = _normalize_text(value.get(key))
+                if text:
+                    values.extend(_split_phrase_variants(text))
+        if values:
+            return values
+        # Fallback: any dict string value.
+        for raw in value.values():
+            text = _normalize_text(raw)
+            if text:
+                values.extend(_split_phrase_variants(text))
+        return values
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(_extract_custom_strike_variants(item))
+        return values
+    return []
 
 
 def _normalize_text(value: Any) -> str | None:
@@ -115,7 +168,40 @@ def _normalize_text(value: Any) -> str | None:
     text = str(value).strip()
     if not text:
         return None
+    text = text.strip("\"'")
     return " ".join(text.split())
+
+
+def _split_phrase_variants(text: str) -> list[str]:
+    cleaned = _normalize_text(text)
+    if not cleaned:
+        return []
+    # Common Kalshi phrasing uses "/" to indicate variant terms.
+    parts = re.split(r"\s*/\s*", cleaned)
+    variants: list[str] = []
+    for part in parts:
+        value = _normalize_text(part)
+        if value:
+            variants.append(value)
+    return variants or [cleaned]
+
+
+def _canonical_term_name(value: str) -> str:
+    text = _normalize_text(value) or ""
+    text = text.casefold()
+    text = re.sub(r"[^\w\s.\-']", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or "term"
+
+
+def _build_pattern_from_variants(variants: list[str]) -> tuple[str, bool]:
+    if not variants:
+        return ("", False)
+    if len(variants) == 1:
+        return (variants[0], False)
+    pieces = [re.escape(item).replace(r"\ ", r"\s+") for item in variants]
+    pattern = rf"(?<!\w)(?:{'|'.join(pieces)})(?!\w)"
+    return (pattern, True)
 
 
 def _load_registry_term_names(path: Path, *, logger: logging.Logger) -> set[str]:

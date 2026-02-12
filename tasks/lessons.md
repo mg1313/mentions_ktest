@@ -249,3 +249,13 @@
   - For cross-workflow connections, prefer existing incremental APIs (`mode=term`) and diff on registry state to execute only new work.
 - How to detect earlier:
   - Check for existing append/incremental interfaces before designing any new orchestration path.
+
+## 2026-02-12 - Kalshi ticker suffix is not a reliable human term key
+- What happened:
+  - Transcript term rows were populated with 4-character codes (e.g., `airb`, `crow`) instead of full term names.
+- Root cause:
+  - Integration used ticker suffix as term `name` by default and did not properly parse structured `custom_strike` values.
+- Preventative rule:
+  - Prefer human-readable phrase sources (`custom_strike`, subtitle fields) for term naming; use ticker suffix only as fallback.
+- How to detect earlier:
+  - Add regression tests that assert extracted term names are full words and that `custom_strike` dict payloads are parsed without stringified braces.
