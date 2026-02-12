@@ -75,7 +75,7 @@ python -m mentions_sports_poller.mentions_api.main --once
 
 - SQLite DB: path from `SQLITE_DB_PATH`
 - Tables:
-- `market_meta`
+- `market_meta` (`title`, `subtitle`, `yes_sub_title`, `no_sub_title`, plus market metadata fields)
 - `orderbook_snapshot` (`ts_utc`, `ticker`, `last_trade_price`, `volume`, `open_interest`)
 - `orderbook_levels`
 - `liquidity_metrics`

@@ -20,6 +20,9 @@ class FakeClient:
             {
                 "ticker": "KXVALIDMENTION-26FEB10ABCDEF-TEST",
                 "title": "Valid test market",
+                "subtitle": "Will ABC be mentioned?",
+                "yes_sub_title": "Mentioned",
+                "no_sub_title": "Not mentioned",
                 "status": "active",
                 "close_time": "2026-02-11T05:00:00Z",
                 "created_time": "2026-02-10T00:00:00Z",
@@ -30,6 +33,9 @@ class FakeClient:
             {
                 "ticker": "KXOTHER-26FEB10BAD-TEST",
                 "title": "Out of scope market",
+                "subtitle": "Out of scope subtitle",
+                "yes_sub_title": "Yes",
+                "no_sub_title": "No",
                 "status": "active",
                 "close_time": "2026-02-11T05:00:00Z",
                 "created_time": "2026-02-10T00:00:00Z",
@@ -56,6 +62,9 @@ def test_discovery_selects_only_mentions_sports_markets() -> None:
     assert discovered[0].ticker == "KXVALIDMENTION-26FEB10ABCDEF-TEST"
     assert discovered[0].category == "Mentions"
     assert "Sports" in discovered[0].tags
+    assert discovered[0].subtitle == "Will ABC be mentioned?"
+    assert discovered[0].yes_sub_title == "Mentioned"
+    assert discovered[0].no_sub_title == "Not mentioned"
 
 
 def test_active_set_filtering_rules() -> None:
@@ -65,6 +74,9 @@ def test_active_set_filtering_rules() -> None:
             ticker="SOON",
             series_ticker="KXVALIDMENTION",
             title="closes soon",
+            subtitle=None,
+            yes_sub_title=None,
+            no_sub_title=None,
             category="Mentions",
             tags=("Sports",),
             status="active",
@@ -79,6 +91,9 @@ def test_active_set_filtering_rules() -> None:
             ticker="ACTIVE_VOLUME",
             series_ticker="KXVALIDMENTION",
             title="has volume",
+            subtitle=None,
+            yes_sub_title=None,
+            no_sub_title=None,
             category="Mentions",
             tags=("Sports",),
             status="active",
@@ -93,6 +108,9 @@ def test_active_set_filtering_rules() -> None:
             ticker="PINNED",
             series_ticker="KXVALIDMENTION",
             title="pinned",
+            subtitle=None,
+            yes_sub_title=None,
+            no_sub_title=None,
             category="Mentions",
             tags=("Sports",),
             status="active",

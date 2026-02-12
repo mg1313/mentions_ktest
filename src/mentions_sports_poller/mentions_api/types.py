@@ -16,6 +16,9 @@ class DiscoveredMarket:
     ticker: str
     series_ticker: str
     title: str
+    subtitle: str | None
+    yes_sub_title: str | None
+    no_sub_title: str | None
     category: str
     tags: tuple[str, ...]
     status: str

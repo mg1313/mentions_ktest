@@ -864,3 +864,47 @@
 - How to run:
   - One-shot: `python -m mentions_sports_poller.mentions_api.main --once`
   - Continuous: `python -m mentions_sports_poller.mentions_api.main`
+
+---
+
+# Task: Persist Human-Readable Mention Phrasing
+
+## Scope Guard
+- [x] Mentions API workflow only.
+- [x] Use existing tables where possible (no unnecessary new table).
+
+## Plan
+- [x] Extend `market_meta` schema to store human-readable phrasing fields from Kalshi market metadata.
+- [x] Update discovery parsing to capture phrasing (`subtitle`, `yes_sub_title`, `no_sub_title`).
+- [x] Update `upsert_market_meta` writes and add backward-safe migration for existing DB files.
+- [x] Update/add tests for discovery parsing and schema migration behavior.
+- [x] Run pytest verification.
+
+## Acceptance Criteria
+- [x] Human-readable market phrasing is persisted in SQLite.
+- [x] Existing DBs are handled without manual destructive reset.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Added human-readable phrasing fields to Mentions market model and persistence path:
+    - `subtitle`
+    - `yes_sub_title`
+    - `no_sub_title`
+  - Updated discovery parsing in `src/mentions_sports_poller/mentions_api/discovery.py` to capture these fields from Kalshi market payloads.
+  - Updated schema/upsert in `src/mentions_sports_poller/mentions_api/storage.py`:
+    - `market_meta` now includes new phrasing columns.
+    - Added non-destructive migration logic (`ALTER TABLE ... ADD COLUMN`) for existing DBs missing these columns.
+  - Updated tests:
+    - `tests/test_scope_and_discovery.py` validates phrasing extraction.
+    - `tests/test_storage_idempotent.py` validates phrasing columns exist and migration works.
+  - Updated runbook table description in `RUNBOOK.md`.
+- Why:
+  - Persist human-readable mention phrasing in an existing metadata table to support easier market interpretation/querying without adding new tables.
+- How tested:
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `49 passed`.
+- How to run:
+  - Poll once to populate/update phrasing fields:
+    - `python -m mentions_sports_poller.mentions_api.main --once`
+  - Query phrasing from SQLite:
+    - `SELECT ticker, title, subtitle, yes_sub_title, no_sub_title FROM market_meta LIMIT 20;`

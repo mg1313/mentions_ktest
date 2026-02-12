@@ -22,6 +22,9 @@ class SQLiteStore:
                     ticker TEXT PRIMARY KEY,
                     series_ticker TEXT NOT NULL,
                     title TEXT NOT NULL,
+                    subtitle TEXT,
+                    yes_sub_title TEXT,
+                    no_sub_title TEXT,
                     category TEXT NOT NULL,
                     tags TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -77,6 +80,7 @@ class SQLiteStore:
                     ON orderbook_levels (ticker, side, level_rank);
                 """
             )
+            self._ensure_market_meta_columns(conn)
 
     def upsert_market_meta(self, markets: Iterable[DiscoveredMarket]) -> None:
         rows = [
@@ -84,6 +88,9 @@ class SQLiteStore:
                 market.ticker,
                 market.series_ticker,
                 market.title,
+                market.subtitle,
+                market.yes_sub_title,
+                market.no_sub_title,
                 market.category,
                 json.dumps(market.tags, separators=(",", ":")),
                 market.status,
@@ -99,12 +106,16 @@ class SQLiteStore:
             conn.executemany(
                 """
                 INSERT INTO market_meta (
-                    ticker, series_ticker, title, category, tags, status, close_time_utc, created_time_utc
+                    ticker, series_ticker, title, subtitle, yes_sub_title, no_sub_title,
+                    category, tags, status, close_time_utc, created_time_utc
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker) DO UPDATE SET
                     series_ticker=excluded.series_ticker,
                     title=excluded.title,
+                    subtitle=excluded.subtitle,
+                    yes_sub_title=excluded.yes_sub_title,
+                    no_sub_title=excluded.no_sub_title,
                     category=excluded.category,
                     tags=excluded.tags,
                     status=excluded.status,
@@ -210,3 +221,12 @@ class SQLiteStore:
         connection.execute("PRAGMA journal_mode=WAL;")
         connection.execute("PRAGMA synchronous=NORMAL;")
         return connection
+
+    def _ensure_market_meta_columns(self, conn: sqlite3.Connection) -> None:
+        existing_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(market_meta)").fetchall()
+        }
+        for column in ("subtitle", "yes_sub_title", "no_sub_title"):
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE market_meta ADD COLUMN {column} TEXT")

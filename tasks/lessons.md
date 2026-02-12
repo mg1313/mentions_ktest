@@ -229,3 +229,13 @@
   - Default to normalized fields required by active queries; add raw payload retention only with explicit downstream requirements and retention policy.
 - How to detect earlier:
   - Estimate weekly row/size growth before finalizing schema and flag high-volume JSON columns for review.
+
+## 2026-02-12 - Metadata column additions need explicit SQLite migration steps
+- What happened:
+  - We needed to add human-readable phrasing fields to `market_meta` after databases already existed in local runs.
+- Root cause:
+  - `CREATE TABLE IF NOT EXISTS` does not update existing table schemas.
+- Preventative rule:
+  - For additive schema changes, run explicit `PRAGMA table_info` checks and `ALTER TABLE ... ADD COLUMN` migrations in startup schema setup.
+- How to detect earlier:
+  - Add a migration test that starts from an old schema and validates new columns appear after `create_schema()`.
