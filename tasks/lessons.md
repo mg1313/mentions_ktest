@@ -239,3 +239,13 @@
   - For additive schema changes, run explicit `PRAGMA table_info` checks and `ALTER TABLE ... ADD COLUMN` migrations in startup schema setup.
 - How to detect earlier:
   - Add a migration test that starts from an old schema and validates new columns appear after `create_schema()`.
+
+## 2026-02-12 - Cross-workflow integration should reuse incremental interfaces, not duplicate pipelines
+- What happened:
+  - We needed Mentions polling to propagate new Kalshi terms into transcript modeling datasets.
+- Root cause:
+  - Workflows were separate and required a bridge, but full rebuild hooks would have been expensive and redundant.
+- Preventative rule:
+  - For cross-workflow connections, prefer existing incremental APIs (`mode=term`) and diff on registry state to execute only new work.
+- How to detect earlier:
+  - Check for existing append/incremental interfaces before designing any new orchestration path.

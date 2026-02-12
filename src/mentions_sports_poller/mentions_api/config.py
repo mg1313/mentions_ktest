@@ -19,6 +19,18 @@ def _env_str(name: str, default: str) -> str:
     return raw if raw is not None and raw != "" else default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 def _env_pinned_tickers(name: str = "PINNED_TICKERS") -> set[str]:
     raw = os.getenv(name, "")
     values = [token.strip() for token in raw.split(",")]
@@ -41,6 +53,13 @@ class Settings:
     depth_target_notional_dollars: float
     pinned_tickers: set[str]
     vwap_budgets_dollars: tuple[float, ...]
+    sync_transcript_terms_enabled: bool
+    transcript_dataset_transcripts_dir: str
+    transcript_dataset_manifest_file: str
+    transcript_dataset_game_info_dir: str
+    transcript_dataset_game_factors_csv: str
+    transcript_dataset_game_term_mentions_csv: str
+    transcript_dataset_term_registry_json: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -65,4 +84,20 @@ class Settings:
             ),
             pinned_tickers=_env_pinned_tickers(),
             vwap_budgets_dollars=(25.0, 50.0, 100.0),
+            sync_transcript_terms_enabled=_env_bool("SYNC_TRANSCRIPT_TERMS_ENABLED", True),
+            transcript_dataset_transcripts_dir=_env_str("TRANSCRIPTS_DIR", "data/transcripts"),
+            transcript_dataset_manifest_file=_env_str("TRANSCRIPT_MANIFEST_FILE", "data/nba_audio_manifest.json"),
+            transcript_dataset_game_info_dir=_env_str("TRANSCRIPT_GAME_INFO_DIR", "data"),
+            transcript_dataset_game_factors_csv=_env_str(
+                "TRANSCRIPT_GAME_FACTORS_CSV",
+                "data/modeling/nba_game_factors.csv",
+            ),
+            transcript_dataset_game_term_mentions_csv=_env_str(
+                "TRANSCRIPT_GAME_TERM_MENTIONS_CSV",
+                "data/modeling/nba_game_term_mentions.csv",
+            ),
+            transcript_dataset_term_registry_json=_env_str(
+                "TRANSCRIPT_TERM_REGISTRY_JSON",
+                "data/modeling/nba_terms_registry.json",
+            ),
         )

@@ -7,6 +7,7 @@ from typing import Any
 from .discovery import discover_open_mentions_sports_markets, select_active_tickers
 from .orderbook import normalize_orderbook
 from .storage import SQLiteStore
+from .term_sync import sync_kalshi_terms_to_transcript_dataset
 from .time_utils import to_utc_iso, utc_now
 from .types import DiscoveredMarket
 from .vwap import compute_liquidity_metrics
@@ -94,6 +95,7 @@ class MentionsSportsPoller:
                 "duration_seconds": duration_seconds,
             },
         )
+        self._sync_transcript_terms()
 
     def _refresh_universe_if_due(self, now_utc: Any) -> None:
         now_mono = self._monotonic()
@@ -123,3 +125,21 @@ class MentionsSportsPoller:
         except Exception:
             # Preserve last active set and fail open when refresh has transient issues.
             self.logger.exception("universe refresh failed")
+
+    def _sync_transcript_terms(self) -> None:
+        try:
+            result = sync_kalshi_terms_to_transcript_dataset(
+                markets=list(self._markets_by_ticker.values()),
+                enabled=bool(self.settings.sync_transcript_terms_enabled),
+                transcripts_dir=self.settings.transcript_dataset_transcripts_dir,
+                manifest_file=self.settings.transcript_dataset_manifest_file,
+                game_info_dir=self.settings.transcript_dataset_game_info_dir,
+                game_factors_path=self.settings.transcript_dataset_game_factors_csv,
+                game_term_mentions_path=self.settings.transcript_dataset_game_term_mentions_csv,
+                term_registry_path=self.settings.transcript_dataset_term_registry_json,
+                logger=self.logger,
+            )
+            if result.get("new_terms", 0):
+                self.logger.info("synced new kalshi terms into transcript dataset", extra=result)
+        except Exception:
+            self.logger.exception("kalshi term sync failed")

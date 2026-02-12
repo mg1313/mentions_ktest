@@ -60,6 +60,13 @@ python -m mentions_sports_poller.mentions_api.main
 - `DEPTH_LEVELS_LIMIT` (default: `20`)
 - `DEPTH_TARGET_NOTIONAL_DOLLARS` (default: `150`)
 - `PINNED_TICKERS` (comma-separated tickers)
+- `SYNC_TRANSCRIPT_TERMS_ENABLED` (default: `true`)
+- `TRANSCRIPTS_DIR` (default: `data/transcripts`)
+- `TRANSCRIPT_MANIFEST_FILE` (default: `data/nba_audio_manifest.json`)
+- `TRANSCRIPT_GAME_INFO_DIR` (default: `data`)
+- `TRANSCRIPT_GAME_FACTORS_CSV` (default: `data/modeling/nba_game_factors.csv`)
+- `TRANSCRIPT_GAME_TERM_MENTIONS_CSV` (default: `data/modeling/nba_game_term_mentions.csv`)
+- `TRANSCRIPT_TERM_REGISTRY_JSON` (default: `data/modeling/nba_terms_registry.json`)
 
 Example:
 
@@ -79,6 +86,21 @@ python -m mentions_sports_poller.mentions_api.main --once
 - `orderbook_snapshot` (`ts_utc`, `ticker`, `last_trade_price`, `volume`, `open_interest`)
 - `orderbook_levels`
 - `liquidity_metrics`
+
+### 3.5 Automatic Kalshi Term -> Transcript Dataset Sync
+
+During each poll cycle, the Mentions workflow can sync Kalshi term list updates into the transcription modeling dataset:
+
+- Extracts Kalshi term candidates from open market tickers (suffix) and available human-readable phrasing fields.
+- Compares against term registry (`TRANSCRIPT_TERM_REGISTRY_JSON`).
+- Runs incremental dataset term mode only for newly-seen terms.
+- Fails open: polling continues if dataset sync fails.
+
+Disable this integration if needed:
+
+```powershell
+$env:SYNC_TRANSCRIPT_TERMS_ENABLED = "false"
+```
 
 ---
 

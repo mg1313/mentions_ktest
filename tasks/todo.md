@@ -908,3 +908,60 @@
     - `python -m mentions_sports_poller.mentions_api.main --once`
   - Query phrasing from SQLite:
     - `SELECT ticker, title, subtitle, yes_sub_title, no_sub_title FROM market_meta LIMIT 20;`
+
+---
+
+# Task: Connect Kalshi Mentions Terms to Transcript Dataset Updates
+
+## Scope Guard
+- [x] Kept Mentions -> Sports market scope unchanged.
+- [x] Implemented only a simple bridge between existing Mentions polling and existing transcript dataset builder.
+- [x] No changes to non-sports ingestion.
+
+## Plan
+- [x] Reuse existing incremental transcript dataset API (`mode=term`) instead of adding a new dataset pipeline.
+- [x] Extract Kalshi term list from current Mentions markets each poll cycle.
+- [x] Diff against term registry and run dataset update for newly-seen terms only.
+- [x] Keep sync fail-open so term sync failure cannot crash Mentions polling.
+- [x] Add unit tests for extraction and new-term-only sync behavior.
+- [x] Run full pytest suite.
+
+## Data Flow
+- Inputs:
+  - Mentions active universe in-memory market list
+  - Transcript registry JSON (`data/modeling/nba_terms_registry.json` by default)
+- Transforms:
+  - Extract term candidate names from ticker suffix + human phrase hints
+  - Compare with registry names
+  - If unseen terms exist, call incremental transcript dataset builder in `term` mode for only those terms
+- Outputs:
+  - Updated term registry JSON
+  - Appended rows in game term mentions CSV for new terms
+
+## Error Handling / Safety
+- [x] Integration is wrapped in `try/except` in poller; failures are logged and poll cycle continues.
+- [x] If term registry is missing/invalid, sync treats it as empty and proceeds safely.
+
+## Acceptance Criteria
+- [x] Every poll cycle can check for newly discovered Kalshi terms.
+- [x] New terms trigger incremental transcript dataset updates.
+- [x] No new terms -> no dataset rebuild work.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Added `src/mentions_sports_poller/mentions_api/term_sync.py` with:
+    - Kalshi term extraction
+    - registry diffing
+    - incremental term dataset sync hook
+  - Updated `src/mentions_sports_poller/mentions_api/poller.py` to call term sync each cycle.
+  - Extended `src/mentions_sports_poller/mentions_api/config.py` with transcript sync env settings.
+  - Added tests in `tests/test_mentions_term_sync.py`.
+  - Updated `RUNBOOK.md` with automatic term sync behavior/config.
+- Why:
+  - Connect the two workflows so Kalshi mentions terms automatically propagate into transcription dataset term coverage, without manual term entry.
+- How tested:
+  - `python -m pytest -q tests/test_mentions_term_sync.py -p no:tmpdir -p no:cacheprovider` -> `2 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `51 passed`.
+- How to run:
+  - Existing Mentions poller commands unchanged; term sync runs automatically unless `SYNC_TRANSCRIPT_TERMS_ENABLED=false`.
