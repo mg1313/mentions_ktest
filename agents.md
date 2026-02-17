@@ -4,6 +4,21 @@ This repo is built with agentic development in mind. Agents must follow the work
 
 ---
 
+## Repository Context Docs (Mandatory)
+
+Before starting any non-trivial task, read:
+
+- `docs/repo_context_llm.md` (required first-pass context for fast full-repo understanding)
+
+Use these companion docs as needed:
+
+- `docs/repo_technical_reference.md` (detailed technical map)
+- `docs/repo_intuition_essay.md` (high-level intuition and strategy framing)
+
+When code behavior, data flow, CLI behavior, storage outputs, or run commands change, update these docs in the same change set.
+
+---
+
 ## North Star
 
 - Build a reliable, testable pipeline to **discover Kalshi Mentions → Sports markets**, **poll order books**, and compute **execution-realistic VWAP** for budget-sized trades.
@@ -139,6 +154,7 @@ Agents MUST follow this sequence:
   - Why
   - How tested
   - How to run
+  - Which repo context docs were updated (if behavior changed)
 
 6) **Capture Lessons**
 - Update `tasks/lessons.md` with any new learnings
@@ -258,5 +274,6 @@ Track:
 - [ ] Tests added/updated and passing locally
 - [ ] Schema changes documented
 - [ ] Example run command documented
+- [ ] Context docs updated when behavior changed (`docs/repo_context_llm.md`, `docs/repo_technical_reference.md`, `docs/repo_intuition_essay.md`)
 - [ ] `tasks/lessons.md` updated if any new learning occurred
 - [ ] PR is narrow, reviewable, and reproducible

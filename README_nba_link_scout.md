@@ -8,6 +8,14 @@ Config-driven CLI tool to:
 4. Extract links from HTML
 5. Fall back to a user-specified embedded-link extractor module when HTML yields no matches
 
+## Repository Context Docs
+
+For full project context (beyond NBA link scouting), review:
+
+- `docs/repo_context_llm.md` (fast, technical whole-repo context)
+- `docs/repo_technical_reference.md` (detailed architecture/workflow documentation)
+- `docs/repo_intuition_essay.md` (strategy/intuition framing)
+
 ## Install / Run
 
 From repo root:

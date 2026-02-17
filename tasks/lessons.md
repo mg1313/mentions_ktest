@@ -259,3 +259,23 @@
   - Prefer human-readable phrase sources (`custom_strike`, subtitle fields) for term naming; use ticker suffix only as fallback.
 - How to detect earlier:
   - Add regression tests that assert extracted term names are full words and that `custom_strike` dict payloads are parsed without stringified braces.
+
+## 2026-02-16 - Legacy alias cleanup must not depend only on currently-open markets
+- What happened:
+  - Even after fixing term extraction, older 4-char aliases persisted in registry/term CSV when corresponding markets were no longer open.
+- Root cause:
+  - Alias mapping originally came only from active market payloads, so closed-market aliases had no migration source.
+- Preventative rule:
+  - Add registry-based alias inference from legacy pattern literals and run migration on both registry and term CSV during sync.
+- How to detect earlier:
+  - Add a regression test where alias rows exist in registry/CSV but active markets do not include that alias ticker.
+
+## 2026-02-17 - Narrow market-type filters should be explicit and configurable
+- What happened:
+  - We needed to constrain Mentions->Sports polling further to only Professional Basketball Game contracts.
+- Root cause:
+  - Existing scope checks enforced category/tag but not market-type wording.
+- Preventative rule:
+  - Add a dedicated, config-backed discovery filter (title substring) instead of ad-hoc ticker assumptions.
+- How to detect earlier:
+  - Include at least one discovery test fixture with an in-scope-but-wrong-sport market title and assert it is excluded.

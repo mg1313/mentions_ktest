@@ -105,7 +105,11 @@ class MentionsSportsPoller:
                 return
 
         try:
-            markets = discover_open_mentions_sports_markets(self.client, logger=self.logger)
+            markets = discover_open_mentions_sports_markets(
+                self.client,
+                logger=self.logger,
+                required_title_substring=self.settings.required_market_title_substring,
+            )
             self.store.upsert_market_meta(markets)
             self._markets_by_ticker = {market.ticker: market for market in markets}
             self._active_tickers = select_active_tickers(

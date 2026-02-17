@@ -5,6 +5,18 @@ Operational commands for the two workflows in this repository:
 - `mentions-sports-poller`: Kalshi Mentions -> Sports orderbook polling + VWAP metrics.
 - `nba-link-scout`: NBA schedule-driven video link discovery workflow.
 
+## 0. Repository Context Docs
+
+Read these before non-trivial changes:
+
+- `docs/repo_context_llm.md` (mandatory first-pass full-repo context for LLM/agent tasks)
+- `docs/repo_technical_reference.md` (detailed technical architecture/workflow reference)
+- `docs/repo_intuition_essay.md` (high-level intuition for project direction)
+
+Maintenance note:
+
+- When workflow behavior, CLI surface, outputs, or data model changes, update these docs in the same change set.
+
 ## 1. Shared Setup
 
 - Python `3.11+`

@@ -49,6 +49,7 @@ class Settings:
     poll_jitter_seconds: int
     universe_refresh_seconds: int
     active_close_within_hours: int
+    required_market_title_substring: str
     depth_levels_limit: int
     depth_target_notional_dollars: float
     pinned_tickers: set[str]
@@ -77,6 +78,10 @@ class Settings:
             poll_jitter_seconds=_env_int("POLL_JITTER_SECONDS", 8),
             universe_refresh_seconds=_env_int("UNIVERSE_REFRESH_SECONDS", 900),
             active_close_within_hours=_env_int("ACTIVE_CLOSE_WITHIN_HOURS", 72),
+            required_market_title_substring=_env_str(
+                "REQUIRED_MARKET_TITLE_SUBSTRING",
+                "Professional Basketball Game",
+            ),
             depth_levels_limit=_env_int("DEPTH_LEVELS_LIMIT", 20),
             depth_target_notional_dollars=_env_float(
                 "DEPTH_TARGET_NOTIONAL_DOLLARS",

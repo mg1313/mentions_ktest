@@ -1,0 +1,7 @@
+[
+  {
+    "is_regex": true,
+    "name": "airball",
+    "pattern": "(?<!\\w)(?:Airball|Airballs|Airballed)(?!\\w)"
+  }
+]

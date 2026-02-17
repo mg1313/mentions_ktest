@@ -12,8 +12,10 @@ from .types import DiscoveredMarket
 def discover_open_mentions_sports_markets(
     client: Any,
     logger: logging.Logger | None = None,
+    required_title_substring: str = "Professional Basketball Game",
 ) -> list[DiscoveredMarket]:
     log = logger or logging.getLogger(__name__)
+    normalized_required_title = required_title_substring.strip().casefold()
     series_rows = client.list_mentions_sports_series()
     in_scope_series: dict[str, dict[str, Any]] = {}
 
@@ -43,6 +45,21 @@ def discover_open_mentions_sports_markets(
                         "ticker": market.get("ticker"),
                         "series_ticker": series_ticker,
                         "reason": reason,
+                    },
+                )
+                continue
+
+            market_title = market.get("title") or ""
+            if (
+                normalized_required_title
+                and normalized_required_title not in market_title.casefold()
+            ):
+                log.warning(
+                    "skipping market outside required title filter",
+                    extra={
+                        "ticker": market.get("ticker"),
+                        "title": market_title,
+                        "required_title_substring": required_title_substring,
                     },
                 )
                 continue

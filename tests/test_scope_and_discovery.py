@@ -19,7 +19,7 @@ class FakeClient:
         return [
             {
                 "ticker": "KXVALIDMENTION-26FEB10ABCDEF-TEST",
-                "title": "Valid test market",
+                "title": "What will the announcers say during Team A vs Team B Professional Basketball Game?",
                 "subtitle": "Will ABC be mentioned?",
                 "yes_sub_title": "Mentioned",
                 "no_sub_title": "Not mentioned",
@@ -29,6 +29,19 @@ class FakeClient:
                 "last_price": 55,
                 "volume": 10,
                 "open_interest": 20,
+            },
+            {
+                "ticker": "KXVALIDMENTION-26FEB10ABCDEF-OTHER",
+                "title": "What will the announcers say during Team A vs Team B Professional Football Game?",
+                "subtitle": "Will DEF be mentioned?",
+                "yes_sub_title": "Mentioned",
+                "no_sub_title": "Not mentioned",
+                "status": "active",
+                "close_time": "2026-02-11T05:00:00Z",
+                "created_time": "2026-02-10T00:00:00Z",
+                "last_price": 45,
+                "volume": 5,
+                "open_interest": 8,
             },
             {
                 "ticker": "KXOTHER-26FEB10BAD-TEST",
@@ -65,6 +78,17 @@ def test_discovery_selects_only_mentions_sports_markets() -> None:
     assert discovered[0].subtitle == "Will ABC be mentioned?"
     assert discovered[0].yes_sub_title == "Mentioned"
     assert discovered[0].no_sub_title == "Not mentioned"
+
+
+def test_discovery_title_filter_can_be_disabled() -> None:
+    discovered = discover_open_mentions_sports_markets(
+        FakeClient(),
+        required_title_substring="",
+    )
+    assert {market.ticker for market in discovered} == {
+        "KXVALIDMENTION-26FEB10ABCDEF-TEST",
+        "KXVALIDMENTION-26FEB10ABCDEF-OTHER",
+    }
 
 
 def test_active_set_filtering_rules() -> None:

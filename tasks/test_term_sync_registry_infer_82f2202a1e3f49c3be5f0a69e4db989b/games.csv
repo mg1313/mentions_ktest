@@ -1,0 +1,2 @@
+audio_id,feed_label,transcript_file,video_url,source_feed_page,game_id,date,away,home,matchup,is_national_tv,is_local_tv,tv_scope_label,commentators,broadcast_networks,broadcast_scopes,players_away,players_home,players_all,roster_away_json,roster_home_json,created_at_utc
+a1,main,t.json,v,u,g1,2026-02-10,A,B,A @ B,0,0,unknown,,,,,,,,,2026-02-10T00:00:00+00:00

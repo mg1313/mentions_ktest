@@ -1007,3 +1007,125 @@
 - How to run:
   - Run Mentions poller (`--once` or continuous); sync will add full-term entries for newly discovered terms automatically.
   - Existing historical 4-char rows are append-only history and remain unless you reset/regenerate term outputs.
+
+---
+
+# Task: Audit 3-Minute Pipeline Outputs (Mentions + Transcript Sync)
+
+## Scope Guard
+- [x] Reviewed Mentions polling and transcription term update outputs only.
+- [x] Applied targeted fixes only where behavior diverged from expected term semantics.
+
+## Review Findings
+- [x] Mentions polling is current and writing every cycle.
+  - `orderbook_snapshot` max timestamp lag observed around ~0.3-0.5 minutes.
+  - `orderbook_snapshot`, `orderbook_levels`, and `liquidity_metrics` row counts are growing.
+- [x] Transcript term sync had legacy truncated aliases from earlier runs (`airb`, `crow`, etc.).
+
+## Fixes Applied
+- [x] Added alias-inference migration from registry legacy pattern literals (`{"Word": ...}` style strings).
+- [x] Added automatic migration for both:
+  - `data/modeling/nba_terms_registry.json`
+  - `data/modeling/nba_game_term_mentions.csv`
+- [x] Added tests covering:
+  - direct alias migration
+  - inferred alias migration when markets do not include the old suffix term.
+
+## Validation
+- [x] `python -m pytest -q tests/test_mentions_term_sync.py -p no:tmpdir -p no:cacheprovider` -> `4 passed`.
+- [x] `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `53 passed`.
+- [x] One-time local migration run applied:
+  - inferred aliases: 10
+  - registry rows migrated: 10
+  - term CSV rows migrated: 180
+
+## Post-Fix Data Check
+- [x] Registry short aliases reduced to only legitimate short terms (`mvp`, `nhl`, etc.) and numeric phrases.
+- [x] Term CSV short aliases similarly reduced; no remaining legacy ticker-code artifacts among migrated set.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/mentions_api/term_sync.py` to infer/migrate legacy aliases using registry pattern literals and apply deduped CSV rewrites.
+  - Updated `tests/test_mentions_term_sync.py` with regression coverage.
+- Why:
+  - Ensure 3-minute sync data reflects human-readable Kalshi terms and cleans historical short-code artifacts.
+- How tested:
+  - Full pytest pass and direct artifact inspection after migration.
+- How to run:
+  - Existing 3-minute poller run commands unchanged; migration logic executes inside sync path.
+
+---
+
+# Task: Restrict Mentions Poller to Professional Basketball Game Markets
+
+## Scope Guard
+- [x] Mentions API workflow only.
+- [x] Keep existing `Mentions` + `Sports` scope assertions intact.
+- [x] Add additional market-type narrowing to only markets whose title indicates `Professional Basketball Game`.
+
+## Plan
+- [x] Add a configurable required title phrase in Mentions settings (default `Professional Basketball Game`) to avoid hard-coded literals in logic.
+- [x] Apply market filtering during discovery after existing scope assertion, skipping non-matching markets with warning logs.
+- [x] Update discovery tests to verify only Professional Basketball Game markets are returned.
+- [x] Run pytest for discovery and full suite.
+
+## Acceptance Criteria
+- [x] Universe refresh includes only open Mentions->Sports markets with `Professional Basketball Game` in title.
+- [x] Other Mentions->Sports market types are skipped and logged.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Updated `src/mentions_sports_poller/mentions_api/discovery.py` to apply a title-substring gate after scope assertion, defaulting to `Professional Basketball Game`.
+  - Updated `src/mentions_sports_poller/mentions_api/config.py` with new env setting `REQUIRED_MARKET_TITLE_SUBSTRING`.
+  - Updated `src/mentions_sports_poller/mentions_api/poller.py` to pass that setting into discovery.
+  - Updated `tests/test_scope_and_discovery.py` to cover:
+    - only professional basketball markets included by default
+    - optional override that disables the title filter.
+- Why:
+  - Narrow the active universe to only the market type you care about now, while keeping Mentions->Sports constraints intact.
+- How tested:
+  - `python -m pytest -q tests/test_scope_and_discovery.py -p no:tmpdir -p no:cacheprovider` -> `4 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `54 passed`.
+- How to run:
+  - Default (basketball-only): `python -m mentions_sports_poller.mentions_api.main --once`
+  - Override phrase if needed: `REQUIRED_MARKET_TITLE_SUBSTRING=\"Professional Basketball Game\" python -m mentions_sports_poller.mentions_api.main --once`
+
+---
+
+# Task: Add Persistent Repository Workflow Summaries
+
+## Scope Guard
+- [x] Documentation-only change; no runtime logic changes.
+- [x] Keep summaries aligned with current repo behavior across Mentions + NBA pipelines.
+- [x] Add references so future tasks review and maintain these docs.
+
+## Plan
+- [x] Create 3 markdown files for:
+  - LLM-oriented technical context
+  - Detailed technical human-readable architecture/workflow reference
+  - Intuition-building narrative essay
+- [x] Add references in operational and agent-instruction markdown files.
+- [x] Add explicit agent rule to review LLM summary first and keep all three docs in sync with code changes.
+
+## Acceptance Criteria
+- [x] Three new `.md` files exist and are discoverable.
+- [x] Existing `.md` files reference these docs.
+- [x] Agent rules explicitly require checking the LLM summary for fast project context.
+
+## Review
+- What changed:
+  - Added:
+    - `docs/repo_context_llm.md`
+    - `docs/repo_technical_reference.md`
+    - `docs/repo_intuition_essay.md`
+  - Updated:
+    - `agents.md`
+    - `RUNBOOK.md`
+    - `README_nba_link_scout.md`
+- Why:
+  - To keep a durable, updatable context pack for future LLM/human tasks and reduce onboarding overhead.
+- How tested:
+  - Manual verification that each referenced path exists and cross-links are valid.
+- How to run:
+  - Documentation-only; no run command needed.
