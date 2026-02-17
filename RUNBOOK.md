@@ -114,6 +114,21 @@ Disable this integration if needed:
 $env:SYNC_TRANSCRIPT_TERMS_ENABLED = "false"
 ```
 
+### 3.6 Power BI Starter Pack (Mentions SQLite)
+
+Files:
+
+- `powerbi/README.md`
+- `powerbi/mentions_reporting_views.sql`
+- `powerbi/mentions_queries.m`
+- `powerbi/mentions_measures.dax`
+
+Apply reporting views:
+
+```powershell
+python scripts/apply_mentions_reporting_views.py --db-path data/mentions_sports.db
+```
+
 ---
 
 ## 3. Workflow B: NBA Link Scout

@@ -1093,6 +1093,52 @@
 
 ---
 
+# Task: Power BI Starter Pack for Mentions Poller Data
+
+## Scope Guard
+- [x] Mentions polling SQLite data only (`market_meta`, `orderbook_snapshot`, `orderbook_levels`, `liquidity_metrics`).
+- [x] No changes to polling logic or data collection behavior.
+- [x] Deliver import-ready artifacts for Power BI (`.sql`, `.m`, `.dax`, usage guide).
+
+## Plan
+- [x] Add SQL reporting views file to shape market metadata, snapshot metrics, top-of-book, and depth summaries for BI.
+- [x] Add Power Query template file that loads those views from SQLite through ODBC.
+- [x] Add DAX measures file for core KPIs (VWAP, spreads, liquidity coverage, time-to-close, market counts).
+- [x] Add runbook-style instructions specific to Power BI import and refresh.
+- [x] Add pytest coverage that validates the reporting SQL script can be applied and queried locally (no network).
+
+## Acceptance Criteria
+- [x] User can point Power BI to SQLite DB and import prebuilt reporting views.
+- [x] User has ready-to-paste DAX measures.
+- [x] Artifacts are documented with minimal setup steps.
+- [x] Tests pass.
+
+## Review
+- What changed:
+  - Added BI view pack in `powerbi/mentions_reporting_views.sql`:
+    - `vw_mentions_market_dim`
+    - `vw_mentions_levels_long`
+    - `vw_mentions_top_of_book`
+    - `vw_mentions_depth_summary`
+    - `vw_mentions_snapshot_enriched`
+  - Added Power Query templates in `powerbi/mentions_queries.m`.
+  - Added DAX KPI pack in `powerbi/mentions_measures.dax`.
+  - Added setup guide in `powerbi/README.md`.
+  - Added helper script `scripts/apply_mentions_reporting_views.py`.
+  - Added reusable helper `src/mentions_sports_poller/mentions_api/reporting_views.py`.
+  - Added SQL validation test `tests/test_powerbi_reporting_views.py`.
+  - Added runbook pointer in `RUNBOOK.md` section `3.6`.
+- Why:
+  - Provide an easy Power BI starter workflow without requiring a prebuilt `.pbix` binary.
+- How tested:
+  - `python -m pytest -q tests/test_powerbi_reporting_views.py -p no:tmpdir -p no:cacheprovider` -> `1 passed`.
+  - `python -m pytest -q -p no:tmpdir -p no:cacheprovider` -> `55 passed`.
+- How to run:
+  - Apply views: `python scripts/apply_mentions_reporting_views.py --db-path data/mentions_sports.db`
+  - Follow `powerbi/README.md` to import M queries and DAX measures.
+
+---
+
 # Task: Add Persistent Repository Workflow Summaries
 
 ## Scope Guard

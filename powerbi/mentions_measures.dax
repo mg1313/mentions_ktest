@@ -1,0 +1,46 @@
+-- Paste these measures into your Power BI model after loading views.
+-- If you renamed imported tables, update table names accordingly.
+
+-- Table: vw_mentions_snapshot_enriched
+Snapshots = COUNTROWS('vw_mentions_snapshot_enriched')
+
+Distinct Markets = DISTINCTCOUNT('vw_mentions_snapshot_enriched'[ticker])
+
+Latest Snapshot UTC = MAX('vw_mentions_snapshot_enriched'[ts_utc])
+
+Avg Last Trade Price = AVERAGE('vw_mentions_snapshot_enriched'[last_trade_price])
+
+Avg Buy YES VWAP $25 = AVERAGE('vw_mentions_snapshot_enriched'[buy_yes_vwap_25])
+
+Avg Buy YES VWAP $50 = AVERAGE('vw_mentions_snapshot_enriched'[buy_yes_vwap_50])
+
+Avg Buy YES VWAP $100 = AVERAGE('vw_mentions_snapshot_enriched'[buy_yes_vwap_100])
+
+Avg Sell YES VWAP $25 = AVERAGE('vw_mentions_snapshot_enriched'[sell_yes_vwap_25])
+
+Avg Top Spread YES = AVERAGE('vw_mentions_snapshot_enriched'[top_spread_yes])
+
+Avg Top Spread NO = AVERAGE('vw_mentions_snapshot_enriched'[top_spread_no])
+
+Buy YES $50 Liquidity Coverage % =
+DIVIDE(
+    COUNT('vw_mentions_snapshot_enriched'[buy_yes_vwap_50]),
+    COUNTROWS('vw_mentions_snapshot_enriched')
+)
+
+Buy YES $100 Liquidity Coverage % =
+DIVIDE(
+    COUNT('vw_mentions_snapshot_enriched'[buy_yes_vwap_100]),
+    COUNTROWS('vw_mentions_snapshot_enriched')
+)
+
+Avg Minutes To Close = AVERAGE('vw_mentions_snapshot_enriched'[minutes_to_close])
+
+-- Table: vw_mentions_top_of_book
+Top YES Ask Dollars Available = SUM('vw_mentions_top_of_book'[yes_ask_notional_dollars])
+
+Top NO Ask Dollars Available = SUM('vw_mentions_top_of_book'[no_ask_notional_dollars])
+
+Top YES Bid Dollars Available = SUM('vw_mentions_top_of_book'[yes_bid_notional_dollars])
+
+Top NO Bid Dollars Available = SUM('vw_mentions_top_of_book'[no_bid_notional_dollars])
