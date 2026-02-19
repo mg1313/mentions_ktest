@@ -279,3 +279,13 @@
   - Add a dedicated, config-backed discovery filter (title substring) instead of ad-hoc ticker assumptions.
 - How to detect earlier:
   - Include at least one discovery test fixture with an in-scope-but-wrong-sport market title and assert it is excluded.
+
+## 2026-02-18 - Markdown patching can fail on mixed quote encodings
+- What happened:
+  - A targeted patch to `tasks/todo.md` failed because existing text contained mixed quote encoding from prior edits.
+- Root cause:
+  - Patch context matched plain ASCII quotes, but file content had non-ASCII quote variants.
+- Preventative rule:
+  - For long markdown files with legacy edits, prefer section-level replace by heading marker when patch context is unstable.
+- How to detect earlier:
+  - Run a quick tail/read before patching and normalize non-ASCII quotes when consistency matters.

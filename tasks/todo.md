@@ -1,4 +1,4 @@
-# Task: Mentions -> Sports Orderbook Poller + VWAP
+﻿# Task: Mentions -> Sports Orderbook Poller + VWAP
 
 ## Scope Guard (Hard)
 - [x] Confirm project scope is strictly Kalshi `category=Mentions` + `tags=Sports`.
@@ -1175,3 +1175,61 @@
   - Manual verification that each referenced path exists and cross-links are valid.
 - How to run:
   - Documentation-only; no run command needed.
+
+---
+
+# Task: General-Purpose LLM Documentation Templates
+
+## Scope Guard
+- [x] Documentation-only task; no runtime code or schema changes.
+- [x] Capture rules already implemented in this repo and generalize them for new repositories.
+- [x] Produce exactly two reusable outputs: `agents_template.md` and `documentation_rules.md`.
+
+## Plan
+- [x] Review existing policy sources (`agents.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/repo_context_llm.md`) and extract stable cross-repo rules.
+- [x] Draft `agents_template.md` as a reusable template with placeholders for project-specific scope and guardrails.
+- [x] Draft `documentation_rules.md` as a compact rulebook of required docs and workflow rules (including `tasks/todo.md` + `tasks/lessons.md`).
+- [x] Verify both docs are consistent with current repo practices and are free of project-specific leakage where not intended.
+
+## Data Flow
+- Inputs:
+  - Existing repo process docs and workflow artifacts.
+- Transforms:
+  - Distill repo-specific instructions into generalized, reusable standards.
+- Outputs:
+  - `agents_template.md`
+  - `documentation_rules.md`
+
+## Error Handling / Safety Checks
+- [x] If a rule is Kalshi/NBA specific, convert it to placeholder language instead of copying literal constraints.
+- [x] Keep "hard stop + re-plan" behavior for ambiguity/scope expansion in template form.
+
+## Minimal Test Plan
+- [x] Manual doc QA:
+  - confirm both files exist
+  - confirm required artifacts are explicitly listed (`AGENTS.md`, `tasks/todo.md`, `tasks/lessons.md`)
+  - confirm workflow sequence (plan -> execute -> review -> lessons) is present
+
+## Acceptance Criteria
+- [x] `agents_template.md` can be copied into a brand-new repo with minimal edits.
+- [x] `documentation_rules.md` summarizes implemented documentation/process rules in reusable form.
+- [x] `tasks/todo.md` contains completion notes and run guidance for this doc task.
+
+## Progress Notes
+- Initial plan drafted and source docs reviewed (`agents.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/repo_context_llm.md`).
+- Added `agents_template.md` with reusable workflow guardrails, scope controls, planning format, verification rules, and output checklist.
+- Added `documentation_rules.md` summarizing required files, task lifecycle, planning standards, doc sync triggers, lessons format, and reproducibility expectations.
+
+## Review
+- What changed:
+  - Added `agents_template.md` as a general-purpose AGENTS starter template with placeholders for project-specific scope and constraints.
+  - Added `documentation_rules.md` summarizing reusable documentation/process rules currently practiced in this repo.
+- Why:
+  - To provide a copy-ready baseline for bootstrapping new repos with the same disciplined LLM workflow.
+- How tested:
+  - Manual doc QA.
+  - Verified files exist: `Get-Item agents_template.md,documentation_rules.md`.
+  - Verified key rule coverage via search (`tasks/todo.md`, `tasks/lessons.md`, workflow sequencing, scope lock, context-doc requirement).
+- How to run:
+  - Documentation-only deliverable; no runtime command required.
+  - Reuse by copying `agents_template.md` to new repo root as `AGENTS.md`, then apply project-specific edits.
