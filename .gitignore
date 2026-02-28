@@ -23,3 +23,5 @@ configs/*.local.json
 # env vars
 .env
 *.env
+
+secrets/
